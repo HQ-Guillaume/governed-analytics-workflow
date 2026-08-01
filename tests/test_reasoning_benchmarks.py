@@ -62,7 +62,6 @@ class ReasoningBenchmarkContractTest(unittest.TestCase):
         required_fields = {
             "case_id",
             "raw_request",
-            "expected_mode",
             "primary_problem_type",
             "secondary_problem_types",
             "required_routes",
@@ -77,7 +76,6 @@ class ReasoningBenchmarkContractTest(unittest.TestCase):
             with self.subTest(case=case["case_id"]):
                 self.assertEqual(required_fields, set(case))
                 self.assertGreaterEqual(len(case["raw_request"]), 80)
-                self.assertIn(case["expected_mode"], analysis_guard.NEEDS_MODES)
                 self.assertIn(case["primary_problem_type"], analysis_guard.PROBLEM_TYPES)
                 self.assertTrue(set(case["secondary_problem_types"]) <= analysis_guard.PROBLEM_TYPES)
                 self.assertTrue(set(case["required_routes"]) <= analysis_guard.CONDITIONAL_REASONING_ROUTES)
@@ -94,6 +92,8 @@ class ReasoningBenchmarkContractTest(unittest.TestCase):
         rubric = self.benchmark["rubric"]
         benchmark_cases = {case["case_id"]: case for case in self.cases}
         self.assertEqual("2.0.0", results["skill_version"])
+        self.assertIn("Historical v2.0.0", results["result_scope"])
+        self.assertIn("not represented as a v2.1.0 rerun", results["result_scope"])
         self.assertIn("did not receive benchmark expectations", results["blind_input_contract"])
         self.assertEqual(6, len(results["cases"]))
         self.assertEqual(analysis_guard.PROBLEM_TYPES, {case["primary_problem_type"] for case in results["cases"]})

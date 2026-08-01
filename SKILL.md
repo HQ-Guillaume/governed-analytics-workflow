@@ -7,6 +7,8 @@ description: Run an adaptive, reasoning-first, governed analytics workflow for u
 
 Turn incomplete or misleading requests into decision-relevant, reproducible analysis. Treat the request as stakeholder evidence, not as an approved analytical specification. Own the framing, data plan, methods, validation, and communication; ask the user only when unresolved business ambiguity would materially change the work.
 
+The primary outcome is a valuable answer: what the data supports, what it means, what remains unknown, and what should happen next. Governance exists to make that answer trustworthy, not to replace it.
+
 ## Non-Negotiable Rules
 
 - Interpret the request before selecting metrics.
@@ -27,16 +29,14 @@ Turn incomplete or misleading requests into decision-relevant, reproducible anal
 - Use exact business language and plain sentences. Avoid generic, inflated, or formulaic wording.
 - Version reviewed context and mark replaced claims or artifacts `superseded`; never silently overwrite them.
 - If evidence is insufficient, narrow the claim, improve measurement, or report readiness instead of fabricating an answer.
+- For behavioural telemetry, prove that event semantics, identifiers, duplicates, consent coverage, missing events, and release history do not manufacture the pattern.
+- Deliver an honest Analysis Brief even when the answer is incomplete; name the known evidence, unknowns, limitations, and smallest useful next action.
 
 ## Start Behaviour
 
-Read the request and available context before asking questions. Choose the lightest mode that can produce a defensible frame:
+Read the request and available context before asking questions. Apply only the reasoning and checks triggered by the decision, evidence, and consequence of error. Proceed on defensible assumptions; pause only for materially divergent framings, disputed outcomes, missing essential evidence, or consequential approval.
 
-- `Light`: clear, low-risk work; keep framing internal and proceed.
-- `Standard`: partial ambiguity or several related questions; show the recommended frame and proceed unless a material correction is required.
-- `Deep`: contradictory, solution-led, causal, multi-stakeholder, or consequential work; investigate context and pause only for materially divergent framings, disputed outcomes, missing essential evidence, or consequential approval.
-
-For `Standard` or `Deep` work, show a concise analyst recommendation:
+When the framing is not obvious, show a concise analyst recommendation:
 
 ```text
 What I believe the business needs:
@@ -54,11 +54,12 @@ Do not ask the requester to design metrics, grain, methods, or the full data pla
 
 ## Reference Router
 
-- Read [needs-discovery-and-analysis-contract.md](references/needs-discovery-and-analysis-contract.md) before framing `Standard` or `Deep` work, or whenever the request is unclear, metric-led, solution-led, contradictory, or missing context.
+- Read [needs-discovery-and-analysis-contract.md](references/needs-discovery-and-analysis-contract.md) whenever the request is unclear, metric-led, solution-led, contradictory, or missing context.
 - Read [problem-type-playbooks.md](references/problem-type-playbooks.md) after selecting the framing and before approving methods or validation.
 - Read [evidence-claims-and-review.md](references/evidence-claims-and-review.md) before source mapping, quality review, execution, claim promotion, recommendations, or durable-context updates.
 - Read [synthesis-and-visualisation.md](references/synthesis-and-visualisation.md) before narrative design, chart selection, wording review, or stakeholder-output generation.
 - Read [presentation-generator-brief.md](references/presentation-generator-brief.md) when a deck, PowerPoint, or external presentation handoff is requested.
+- Read [worked-web-product-example.md](references/worked-web-product-example.md) when behavioural event sequences, missing predecessor events, reporting-window boundaries, identity changes, consent, duplicates, or instrumentation defects may explain the result.
 
 ## Four Phases And Twelve Checkpoints
 
@@ -89,6 +90,8 @@ Use conditional reasoning only when triggered:
 | `anomaly_detection` | Observations judged against normal behaviour | Baseline, seasonality, false-positive review |
 | `theme_identification` | Unstructured evidence coded into themes | Corpus coverage, codebook, negative cases, reviewer agreement |
 | `consequential_work` | Error could cause material harm | Pre-mortem, falsification, independent review |
+| `instrumentation_reliability` | Web or product telemetry underpins the result | Event semantics, duplicate and missing events, consent coverage, identity, release history |
+| `experiment` | Randomized test or declared test winner | Eligibility, randomization unit, SRM, sample size, peeking, uncertainty, guardrails |
 
 Record triggered routes with these exact IDs in `analysis_blueprint.conditional_routes`.
 
@@ -125,6 +128,8 @@ Record source authority, freshness, coverage, natural grain, identifiers, joinab
 
 Validate source authority and freshness, population, period, timezone, filters, identifiers, grain, deduplication, denominators, missing-versus-zero semantics, expected domains, metric meaning, and source coverage. Add conditional checks for joins, availability, temporal ordering, sampling, outliers, sample size, uncertainty, multiple comparisons, confounding, selection bias, and sensitivity.
 
+For web and product event data, explicitly reconcile event meaning with the visible or server-side outcome; test repeated emissions, missing transitions, consent-dependent coverage, identifier changes, and tracking or product releases. For experiments, validate eligibility, assignment and analysis units, sample-ratio mismatch, sample size and stopping logic, repeated peeking, uncertainty, and guardrails before calling a winner.
+
 Record every check as `pass`, `warning`, `fail`, `unknown`, or `not_applicable`, with severity, evidence, impact, and required action. Critical `fail` or `unknown` results block validated or approved claims.
 
 #### 6. Execute Bounded Work
@@ -151,6 +156,8 @@ Keep observation, interpretation, claim, and recommendation separate. Observatio
 
 Answer each active context, decision, diagnostic, data-quality, and validation question with an approved claim, a documented limitation, or an explicit unavailable result. Keep branches separate when their populations, methods, or evidence postures differ.
 
+Create the stakeholder-facing Analysis Brief with: business question, executive answer, supporting evidence, interpretation, alternative explanations, limitations, unknowns, recommended next action, and methods references. Use `complete`, `incomplete`, or `blocked` honestly; do not suppress useful partial conclusions.
+
 #### 9. Design Visuals And Language
 
 For each analytical visual, record the communication function, data structure, chart candidates, selected chart, measurement card, catalogue decision, wording review, and rendered QA. The measurement card must state population, grain, period, denominator, coverage, unit, temporal scope, missing/zero treatment, and claim posture.
@@ -159,7 +166,9 @@ Use the Data Visualisation Catalogue once per distinct communication function wh
 
 #### 10. Build The Stakeholder Narrative
 
-Build from the analysis blueprint and approved claims, not from the request's order or a fixed template. Separate verified facts, interpretation, recommendation, and limitations. Freeze the claim set and narrative before generating medium- or high-risk decks.
+Use the Analysis Brief as the primary human output. Build it from the analysis blueprint and approved claims, not from the request's order. Separate verified facts, interpretation, recommendation, and limitations. Add a deck only when the audience or request needs one, and freeze the claim set and narrative before generating medium- or high-risk decks.
+
+Do not require a chart when concise prose or a small table communicates the answer more clearly.
 
 ### Phase 4: Delivery
 
@@ -187,9 +196,17 @@ Keep `analysis-manifest.json` as the canonical contract, evidence under `evidenc
 python scripts/analysis_guard.py validate analyses/<analysis_id>/analysis-manifest.json --stage contract
 python scripts/analysis_guard.py validate analyses/<analysis_id>/analysis-manifest.json --stage evidence
 python scripts/analysis_guard.py quality analyses/<analysis_id>/analysis-manifest.json
+python scripts/analysis_guard.py validate analyses/<analysis_id>/analysis-manifest.json --stage claims
 python scripts/analysis_guard.py validate analyses/<analysis_id>/analysis-manifest.json --stage delivery
 python scripts/analysis_guard.py stale analyses/<analysis_id>/analysis-manifest.json --fail-on-stale
 python scripts/analysis_guard.py scan analyses/<analysis_id>
+python scripts/analysis_guard.py brief analyses/<analysis_id>/analysis-manifest.json --output analyses/<analysis_id>/analysis-brief.md
+```
+
+For a final repeatable check, run the cumulative gate once; use JSON for automation:
+
+```text
+python scripts/analysis_guard.py gate analyses/<analysis_id>/analysis-manifest.json --format json
 ```
 
 Migrate a v1 manifest into a separate v2 file with:

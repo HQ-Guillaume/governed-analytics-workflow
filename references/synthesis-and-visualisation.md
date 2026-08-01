@@ -5,6 +5,7 @@ Use this reference after evidence and claim review. Synthesis answers the analys
 ## Contents
 
 - Narrative contract
+- Decision-ready Analysis Brief
 - Problem-type narrative routing
 - Chart selection and variety
 - Measurement cards
@@ -28,6 +29,36 @@ decision or learning objective
 Do not reproduce the request's metric order. Do not force every analysis into one deck structure. Include context only when it defines, explains, validates, or changes the decision interpretation.
 
 For medium- or high-risk work, freeze approved claims, narrative order, result tables, required caveats, template, language, and terminology before generating a deck. Material changes mark affected slides stale.
+
+## Decision-Ready Analysis Brief
+
+The Analysis Brief is the default human deliverable. A deck, dashboard, or detailed appendix is optional and should derive from it.
+
+A text-only brief is a valid delivery. Add a chart only when it makes an important pattern, comparison, distribution, sequence, or uncertainty materially easier to understand.
+
+```text
+Business question
+Executive answer
+Evidence supporting the answer
+Interpretation
+Alternative explanations
+Limitations
+What remains unknown
+Recommended next action
+Methods and traceability
+```
+
+Use `complete` when the decision question is answered within the evidence ceiling. Use `incomplete` when useful findings exist but a material part remains unresolved. Use `blocked` when no decision-ready conclusion is supportable until a named dependency changes.
+
+An incomplete answer is still useful when it states:
+
+- what was established and for which population and period;
+- what could not be established and why;
+- whether the gap is behavioural, statistical, semantic, or instrumentation-related;
+- the smallest data or measurement action that would resolve it;
+- what decision is safe now and what decision should wait.
+
+Do not replace the answer with a validation log. Put technical check details in methods and traceability unless they materially change the executive interpretation.
 
 ## Problem-Type Narrative Biases
 

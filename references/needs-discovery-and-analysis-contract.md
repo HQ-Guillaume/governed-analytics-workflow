@@ -29,18 +29,9 @@ Keep this reasoning concise. Record its decisions and assumptions, not hidden ch
 
 ## Adaptive Discovery Router
 
-Choose the least intensive mode that can produce a defensible frame.
+Apply the always-on kernel once, then add only the methods whose trigger is present. A clear low-risk question can proceed after a concise internal frame. Ambiguity, incompatible sources, causal wording, behavioural telemetry, experiments, or consequential decisions activate their specific checks. The workflow has no user-selectable analysis modes.
 
-| Signal | Light | Standard | Deep |
-| --- | --- | --- | --- |
-| Need clarity | Clear | Partly stated | Missing, contradictory, or solution-led |
-| Questions | One | Several related | Competing or mixed questions |
-| Sources/stakeholders | One or familiar | Several | Multiple grains, owners, or audiences |
-| Consequence of error | Low | Medium | High, public, expensive, or hard to reverse |
-| Causal/preferred conclusion | Absent | Possible | Explicit or politically consequential |
-| Behaviour | Reason internally and proceed | Recommend a frame and proceed unless corrected | Investigate broadly; pause only for a material fork or approval |
-
-Depth changes the amount of discovery and review, not the quality of the always-on reasoning kernel.
+Show the recommended frame when it helps the requester correct a material assumption. Pause only when a plausible alternative would change the population, decision, evidence ceiling, method, or consequence of error.
 
 ## Request Decomposition
 
@@ -132,6 +123,8 @@ Use these stable route identifiers in `analysis_blueprint.conditional_routes`:
 | `anomaly_detection` | Observations must be judged against an expected baseline. |
 | `theme_identification` | Unstructured evidence must be coded into recurring themes. |
 | `consequential_work` | Error could create material harm, irreversible action, or external exposure. |
+| `instrumentation_reliability` | Web or product telemetry may be affected by event semantics, implementation, identity, consent, or releases. |
+| `experiment` | A randomized test is being designed, analysed, stopped, or used for a rollout decision. |
 
 ### Ambiguity Or Metric-Led Requests
 
@@ -160,6 +153,14 @@ Apply a representativeness gate. Use `illustrative` when evidence shows a possib
 - **Pre-mortem:** imagine the analysis caused a poor decision; convert plausible causes into requirements.
 - **Falsification:** state what evidence would weaken or overturn the preferred interpretation.
 - **Independent review:** use a clean-context reviewer with the contract and evidence, not the intended verdict.
+
+### Instrumentation Reliability
+
+Reproduce the result from raw events before interpreting behaviour. Define each event against the visible or server-side outcome, then test duplicate emissions, missing expected transitions, reporting-window lookback, timestamp and timezone handling, identifier changes, consent-dependent collection, and tracking or product release history. Distinguish `observed no event` from `the behaviour did not happen`.
+
+### Experiments
+
+Confirm the eligible population, assignment mechanism, randomization unit, analysis unit, primary outcome, planned sample size, stopping rule, and guardrails. Check sample-ratio mismatch, cross-device or repeated-user contamination, peeking, attrition, uncertainty, and practical importance. Do not declare a winner from a favourable point estimate alone.
 
 Problem-type-specific routes are defined in `problem-type-playbooks.md`.
 

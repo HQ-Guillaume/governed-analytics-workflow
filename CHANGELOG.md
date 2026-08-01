@@ -1,5 +1,44 @@
 # Changelog
 
+## 2.1.0 - 2026-08-01
+
+### Why This Release Matters
+
+Version 2.1 makes the useful analytical answer the primary human outcome. It adds concrete validity checks for behavioural telemetry and experiments, produces an honest decision-ready brief even when evidence is incomplete, and removes user-selectable analysis modes without breaking schema 2.0 manifests.
+
+### What Changed
+
+- Added the stakeholder-facing Analysis Brief with explicit answer, evidence, interpretation, alternatives, limitations, unknowns, next action, and traceability.
+- Made text-only Analysis Briefs valid deliveries; visuals are required only when they add communication value.
+- Added `brief` generation and one cumulative `gate` command, plus structured `--format json` output for automation.
+- Added the `instrumentation_reliability` route for event semantics, duplicates, missing events, consent coverage, identity when relevant, and release history.
+- Added the `experiment` route for eligibility, assignment and analysis units, sample-ratio mismatch, sample size, stopping and peeking, uncertainty, and guardrails.
+- Added a complete synthetic web/product worked example that reconciles form sends apparently missing a preceding open.
+- Removed analysis modes from the active workflow and new manifest template; old `light`, `standard`, and `deep` values remain accepted only for schema 2.0 compatibility and are ignored.
+- Hardened validation against null or malformed collections, string reference lists, circular question trees, invalid metric statuses, absent fingerprint hashes, UTF-8 BOM files, and chart-name substring false positives.
+- Centralized collection and fingerprint helpers, documented SHA-256 canonicalization, fixed atomic-write cleanup and migration path comparison, and expanded portability scanning.
+- Added runtime release identity, multi-OS/multi-Python CI, version-scoped release notes, and published SHA-256 checksum artifacts.
+
+### What Users Should Do
+
+- Use `analysis_guard.py brief` as the default human output and add a deck only when the audience needs one.
+- Apply instrumentation and experiment routes only when their triggers are present.
+- Run `analysis_guard.py gate <manifest> --format json` for the final repeatable check.
+- Existing schema 2.0 manifests remain valid; remove the deprecated `needs_discovery.mode` field when next editing them.
+- Fresh installations should use the `v2.1.0` release archive or tag.
+
+### Validation
+
+- Full dependency-free unit, malformed-input, route, brief, gate, migration, benchmark-contract, worked-example, portability, and deterministic-package suite.
+- Release check verifies project, runtime, changelog, and packaged release-version identity.
+- CI covers Python 3.10 and 3.13 on Ubuntu and Windows.
+
+### Known Limits
+
+- The guard validates declared structure and selected invariants; it cannot prove that an external query, experiment implementation, or business interpretation is correct.
+- The worked example is synthetic and demonstrates the diagnostic method, not a production prevalence estimate.
+- Historical v2.0 blind benchmark scores are retained as a clearly labelled baseline and are not represented as a v2.1 rerun.
+
 ## 2.0.2 - 2026-07-15
 
 ### Why This Release Matters

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import copy
+import contextlib
 import importlib.util
+import io
 import json
 import tempfile
 import unittest
@@ -39,7 +41,6 @@ def valid_manifest() -> dict:
     data["status"] = "ready_for_delivery"
     data["needs_discovery"].update(
         {
-            "mode": "deep",
             "triggers": ["metric-led request"],
             "stated_request": [{"request_item_id": "RQ1", "text": "Describe the complete distribution."}],
             "request_decomposition": {
@@ -303,6 +304,18 @@ def valid_manifest() -> dict:
             "revisit_condition": "Revisit if eligibility or state tracking changes.",
         }
     ]
+    data["analysis_brief"] = {
+        "answer_status": "complete",
+        "business_question": "Which state should be investigated first?",
+        "executive_answer": "The expected state domain is complete; prioritize diagnosis using the largest state.",
+        "key_claim_ids": ["C1"],
+        "interpretation": "The distribution is suitable for prioritizing a diagnostic investigation, not for causal action.",
+        "alternative_explanations": [],
+        "limitations": ["The distribution does not explain why entities are in each state."],
+        "unknowns": [],
+        "recommended_next_action": "Investigate the largest state before selecting an intervention.",
+        "methods_refs": ["evidence/query.sql"],
+    }
     data["artifacts"] = [
         {
             "artifact_id": "A1",
@@ -319,8 +332,10 @@ def valid_manifest() -> dict:
 def legacy_manifest() -> dict:
     data = valid_manifest()
     data["schema_version"] = "1.0"
+    data["needs_discovery"]["mode"] = "deep"
     data.pop("analysis_blueprint")
     data.pop("quality_checks")
+    data.pop("analysis_brief")
     for field in (
         "request_decomposition",
         "selected_framing",
@@ -371,6 +386,9 @@ class ManifestValidationTest(unittest.TestCase):
     def test_template_passes_non_stage_validation(self) -> None:
         template = analysis_guard.load_json(ROOT / "assets" / "analysis-manifest.template.json")
         self.assertEqual([], analysis_guard.validate_manifest(template))
+        brief = analysis_guard.build_analysis_brief(template)
+        self.assertEqual("incomplete", brief["answer_status"])
+        self.assertTrue(brief["unknowns"])
 
     def test_complete_manifest_passes_every_stage(self) -> None:
         for stage in ("contract", "evidence", "claims", "delivery"):
@@ -580,6 +598,8 @@ class ManifestValidationTest(unittest.TestCase):
         self.assertEqual("unknown", migrated["claims"][0]["claim_type"])
         self.assertEqual([], migrated["quality_checks"])
         self.assertEqual([], migrated["needs_discovery"]["permitted_claim_types"])
+        self.assertNotIn("mode", migrated["needs_discovery"])
+        self.assertEqual("not_started", migrated["analysis_brief"]["answer_status"])
         self.assertEqual([], analysis_guard.validate_manifest(migrated))
 
     def test_migrate_command_does_not_overwrite_source_by_default(self) -> None:
@@ -592,6 +612,21 @@ class ManifestValidationTest(unittest.TestCase):
             self.assertEqual(original, source.read_text(encoding="utf-8"))
             migrated = json.loads((Path(temp) / "analysis.v2.json").read_text(encoding="utf-8"))
             self.assertEqual("2.0", migrated["schema_version"])
+
+    def test_migrate_rejects_an_alias_of_the_source_without_write(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "analysis.json"
+            source.write_text(json.dumps(legacy_manifest()), encoding="utf-8")
+            original = source.read_bytes()
+            aliased_output = source.parent / "." / source.name
+            args = type(
+                "Args",
+                (),
+                {"manifest": source, "output": aliased_output, "write": False, "force": False, "format": "json"},
+            )
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(1, analysis_guard.command_migrate(args))
+            self.assertEqual(original, source.read_bytes())
 
     def test_quality_command_enforces_critical_blockers(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -610,6 +645,7 @@ class ManifestValidationTest(unittest.TestCase):
             data["claims"][0].update({"status": "candidate", "evidence_posture": "needs_validation"})
             data["visuals"][0]["qa_status"] = "pending"
             data["artifacts"][0]["status"] = "draft"
+            data["analysis_brief"].update({"answer_status": "not_started", "key_claim_ids": []})
             manifest.write_text(json.dumps(data), encoding="utf-8")
             args = type("Args", (), {"manifest": manifest, "fail_on_warning": False})
             self.assertEqual(0, analysis_guard.command_quality(args))
@@ -620,7 +656,7 @@ class ManifestValidationTest(unittest.TestCase):
             self.assertEqual(0, analysis_guard.command_init(args))
             self.assertTrue((Path(temp) / "run" / "analysis-manifest.json").exists())
             self.assertTrue((Path(temp) / "run" / "evidence").is_dir())
-            self.assertTrue((Path(temp) / "run" / "results.md").exists())
+            self.assertTrue((Path(temp) / "run" / "analysis-brief.md").exists())
 
     def test_portability_scan_detects_secret_and_absolute_path(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -633,6 +669,153 @@ class ManifestValidationTest(unittest.TestCase):
             findings = analysis_guard.scan_path(Path(temp))
             self.assertTrue(any("possible secret" in finding for finding in findings), findings)
             self.assertTrue(any("machine-specific absolute path" in finding for finding in findings), findings)
+
+    def test_malformed_collections_report_errors_without_crashing(self) -> None:
+        mutations = (
+            ("quality_checks", None),
+            ("claims", None),
+            ("metrics", ["not-an-object"]),
+        )
+        for field, value in mutations:
+            with self.subTest(field=field):
+                data = valid_manifest()
+                data[field] = value
+                errors = analysis_guard.validate_manifest(data)
+                self.assertTrue(errors)
+
+        data = valid_manifest()
+        data["metrics"][0]["question_ids"] = None
+        errors = analysis_guard.validate_manifest(data)
+        self.assertTrue(any("M1.question_ids must be a list" in error for error in errors), errors)
+
+        with tempfile.TemporaryDirectory() as temp:
+            manifest = Path(temp) / "analysis.json"
+            malformed = valid_manifest()
+            malformed["metrics"] = ["not-an-object"]
+            malformed["claims"] = None
+            manifest.write_text(json.dumps(malformed), encoding="utf-8")
+            fingerprint_args = type("Args", (), {"manifest": manifest, "write": False, "format": "json"})
+            stale_args = type(
+                "Args", (), {"manifest": manifest, "write": False, "fail_on_stale": True, "format": "json"}
+            )
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(1, analysis_guard.command_fingerprint(fingerprint_args))
+                self.assertEqual(1, analysis_guard.command_stale(stale_args))
+
+    def test_load_json_accepts_utf8_bom(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "manifest.json"
+            path.write_text(json.dumps(valid_manifest()), encoding="utf-8-sig")
+            self.assertEqual("2.0", analysis_guard.load_json(path)["schema_version"])
+
+    def test_atomic_json_write_cleans_temporary_file_after_serialization_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "manifest.json"
+            with self.assertRaises(TypeError):
+                analysis_guard.write_json_atomic(target, {"unsupported": {1, 2}})
+            self.assertFalse(target.exists())
+            self.assertEqual([], list(Path(temp).iterdir()))
+
+    def test_question_parent_cycle_is_rejected(self) -> None:
+        data = valid_manifest()
+        second = copy.deepcopy(data["question_tree"]["questions"][0])
+        second["question_id"] = "Q2"
+        second["parent_id"] = "Q1"
+        second["data_requirement_ids"] = []
+        data["question_tree"]["questions"][0]["parent_id"] = "Q2"
+        data["question_tree"]["questions"].append(second)
+        errors = analysis_guard.validate_manifest(data)
+        self.assertTrue(any("parent cycle" in error for error in errors), errors)
+
+    def test_sparkline_named_chart_is_not_a_line_chart(self) -> None:
+        data = valid_manifest()
+        data["visuals"][0]["data_structure"]["ordered"] = False
+        data["visuals"][0]["selected_chart"] = "sparkline_grid"
+        errors = analysis_guard.validate_manifest(data)
+        self.assertFalse(any("cannot use a line" in error for error in errors), errors)
+
+    def test_metric_status_and_required_fingerprint_hash_are_enforced(self) -> None:
+        data = valid_manifest()
+        data["metrics"][0]["status"] = "Validated"
+        data["metrics"][0].pop("fingerprint_hash")
+        errors = analysis_guard.validate_manifest(data, stage="evidence")
+        self.assertTrue(any("invalid status: Validated" in error for error in errors), errors)
+        self.assertTrue(any("requires fingerprint_hash" in error for error in errors), errors)
+
+    def test_instrumentation_and_experiment_routes_activate_practical_checks(self) -> None:
+        for route, expected in (
+            ("instrumentation_reliability", "instrumentation_semantics"),
+            ("experiment", "experiment_srm"),
+        ):
+            with self.subTest(route=route):
+                data = valid_manifest()
+                data["analysis_blueprint"]["conditional_routes"].append(
+                    {"route": route, "trigger": "Relevant data is present.", "rationale": "Validity depends on it.", "applied": True}
+                )
+                errors = analysis_guard.validate_manifest(data, stage="evidence")
+                self.assertTrue(any(route in error and expected in error for error in errors), errors)
+
+    def test_incomplete_analysis_brief_is_actionable_and_valid(self) -> None:
+        data = valid_manifest()
+        data["analysis_brief"].update(
+            {
+                "answer_status": "incomplete",
+                "executive_answer": "The recorded pattern is real, but its full cause cannot yet be separated.",
+                "unknowns": ["Whether consent loss explains the remaining telemetry gap."],
+                "recommended_next_action": "Reconcile the event export with consent and release logs.",
+            }
+        )
+        self.assertEqual([], analysis_guard.validate_manifest(data, stage="delivery"))
+        brief = analysis_guard.build_analysis_brief(data)
+        self.assertEqual("incomplete", brief["answer_status"])
+        self.assertIn("consent", " ".join(brief["unknowns"]))
+        rendered = analysis_guard.render_analysis_brief(brief)
+        self.assertIn("## Executive answer", rendered)
+        self.assertIn("## What remains unknown", rendered)
+
+    def test_complete_analysis_brief_cannot_use_unapproved_or_absent_claims(self) -> None:
+        data = valid_manifest()
+        data["analysis_brief"]["key_claim_ids"] = []
+        errors = analysis_guard.validate_manifest(data)
+        self.assertTrue(any("complete analysis_brief requires key_claim_ids" in error for error in errors), errors)
+        data = valid_manifest()
+        data["claims"][0]["status"] = "validated"
+        errors = analysis_guard.validate_manifest(data)
+        self.assertTrue(any("analysis_brief uses non-approved claim" in error for error in errors), errors)
+
+    def test_text_only_analysis_brief_can_be_a_complete_delivery(self) -> None:
+        data = valid_manifest()
+        data["visuals"] = []
+        data["artifacts"][0].update(
+            {
+                "purpose": "decision-ready analysis brief",
+                "path": "analysis-brief.md",
+                "depends_on": ["M1", "C1"],
+            }
+        )
+        self.assertEqual([], analysis_guard.validate_manifest(data, stage="delivery"))
+
+    def test_gate_and_json_output_pass_complete_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            manifest = Path(temp) / "analysis-manifest.json"
+            manifest.write_text(json.dumps(valid_manifest()), encoding="utf-8")
+            args = type(
+                "Args",
+                (),
+                {
+                    "manifest": manifest,
+                    "stage": "delivery",
+                    "scan_path": Path(temp),
+                    "fail_on_warning": False,
+                    "format": "json",
+                },
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(0, analysis_guard.command_gate(args))
+            payload = json.loads(output.getvalue())
+            self.assertTrue(payload["passed"])
+            self.assertEqual([], payload["validation_errors"])
 
 
 class RuntimeContractTest(unittest.TestCase):

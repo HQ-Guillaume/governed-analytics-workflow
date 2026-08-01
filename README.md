@@ -24,9 +24,9 @@ stakeholder input
 
 It does not store hidden chain-of-thought or make the requester design the analysis.
 
-## What v2 Changes
+## What v2.1 Changes
 
-Version 2.0 focuses on analytical judgment:
+Version 2.1 keeps the v2 schema and focuses the workflow more sharply on useful analytical answers:
 
 - an always-on reasoning kernel challenges the literal request;
 - conditional methods activate only when their trigger is present;
@@ -37,6 +37,11 @@ Version 2.0 focuses on analytical judgment:
 - every stakeholder visual carries measurement context and rendered QA;
 - wording review favours direct, natural, domain-correct language;
 - v1 manifests migrate without inheriting unreviewed approvals.
+- a decision-ready Analysis Brief is the default human output, including structured incomplete answers;
+- behavioural telemetry activates concrete instrumentation-reliability checks;
+- A/B tests activate practical assignment, SRM, stopping, uncertainty, and guardrail checks;
+- the guard is robust to malformed collections and BOM-encoded JSON;
+- `brief`, `gate`, and machine-readable `--format json` outputs reduce manual handoffs.
 
 The runtime remains compact and platform-neutral.
 
@@ -49,15 +54,7 @@ The skill retains four phases and twelve operational checkpoints:
 3. **Synthesis:** answer the blueprint, design visuals and wording, and build the stakeholder narrative.
 4. **Delivery:** inspect and version the output, then define follow-up.
 
-Discovery depth adapts to the work:
-
-| Mode | Use |
-| --- | --- |
-| `Light` | Clear, low-risk work with no material framing fork |
-| `Standard` | Partial ambiguity, several related questions, or moderate risk |
-| `Deep` | Contradictory, solution-led, causal, multi-stakeholder, or consequential work |
-
-The agent proposes a defensible frame and asks the user only when unresolved business ambiguity or approval would materially change the analysis.
+The agent applies a small reasoning kernel to every request and activates extra methods only when their trigger is present. There are no user-selectable analysis modes. It proposes a defensible frame and asks the user only when unresolved business ambiguity or approval would materially change the analysis.
 
 ## Needs Discovery
 
@@ -71,7 +68,7 @@ Every analysis applies a small reasoning kernel:
 6. Define population, scope, period, timezone, grain, filters, exclusions, and denominator.
 7. Design the complete decision, context, diagnostic, quality, and validation data plan.
 
-Conditional routes add analytical laddering, stakeholder mapping, source compatibility, temporal eligibility, representativeness, model validation, anomaly baselines, theme review, pre-mortems, falsification, or independent review only when relevant.
+Conditional routes add analytical laddering, stakeholder mapping, source compatibility, temporal eligibility, representativeness, model validation, anomaly baselines, theme review, instrumentation reliability, experiment validity, pre-mortems, falsification, or independent review only when relevant.
 
 ## Analysis Blueprint
 
@@ -122,6 +119,8 @@ Every evidence-stage analysis checks:
 
 Conditional checks cover joins, availability, temporal ordering, representativeness, outliers, sample size, uncertainty, multiple comparisons, confounding, selection, and sensitivity. Prediction, categorisation, anomaly, and theme routes add their own quality requirements.
 
+When web or product events underpin the answer, the instrumentation route checks event semantics, duplicate and missing events, consent coverage, identity stitching when relevant, and tracking or product release history. When an experiment underpins a winner or rollout decision, the experiment route checks eligibility, assignment and analysis units, sample-ratio mismatch, sample size, stopping and peeking, uncertainty, and guardrails.
+
 Each check returns `pass`, `warning`, `fail`, `unknown`, or `not_applicable`. A critical failure or unresolved critical check blocks claim promotion. Warnings must follow the affected claims and visuals.
 
 ## Evidence Governance
@@ -137,6 +136,22 @@ validated or approved -> superseded when replaced
 ```
 
 Claims record posture, population, denominator, temporal scope, coverage, missingness, uncertainty, alternatives, decision use, evidence, metrics, and quality warnings. Observational evidence produces hypotheses or tests, not unsupported prescriptions. Changed metric fingerprints mark dependent claims and outputs stale.
+
+Fingerprint hashes use SHA-256 over canonical JSON with sorted keys, compact separators, ASCII escapes, and UTF-8 bytes. They detect definition changes; they do not prove that an external query executed correctly.
+
+## Analysis Brief
+
+The default human deliverable is `analysis-brief.md`, containing:
+
+```text
+business question -> executive answer -> supporting evidence
+-> interpretation and alternatives -> limitations and unknowns
+-> recommended next action -> methods and traceability
+```
+
+The answer status is `complete`, `incomplete`, or `blocked`. An incomplete brief still states what is known, what cannot be established, why the gap exists, and the smallest useful next action. A deck is optional and derives from the approved brief and claims.
+
+See the [worked web/product example](references/worked-web-product-example.md) for a full raw-event reproduction of apparent form sends without a preceding form open.
 
 ## Visualisation
 
@@ -161,7 +176,7 @@ The canonical run file is `analysis-manifest.json` using schema `2.0`:
 analyses/<analysis-id>/
 |-- analysis-manifest.json
 |-- evidence/
-|-- results.md
+|-- analysis-brief.md
 `-- requested delivery, when needed
 ```
 
@@ -176,6 +191,8 @@ python scripts/analysis_guard.py validate analyses/example-analysis/analysis-man
 python scripts/analysis_guard.py validate analyses/example-analysis/analysis-manifest.json --stage delivery
 python scripts/analysis_guard.py stale analyses/example-analysis/analysis-manifest.json --fail-on-stale
 python scripts/analysis_guard.py scan analyses/example-analysis
+python scripts/analysis_guard.py brief analyses/example-analysis/analysis-manifest.json --output analyses/example-analysis/analysis-brief.md
+python scripts/analysis_guard.py gate analyses/example-analysis/analysis-manifest.json --format json
 ```
 
 The guard is deterministic and dependency-free. It validates contracts and selected semantic invariants; it cannot prove that an external query, model, or business interpretation is correct.
@@ -192,7 +209,7 @@ Migration preserves legacy content, marks new v2 requirements unresolved, and de
 
 ## Forward Benchmark
 
-The repository contains a blind benchmark of raw, confusing requests across all six problem types. Executing agents receive only the raw request. The hidden rubric scores:
+The repository contains a blind benchmark of raw, confusing requests across all six problem types, including telemetry-reliability and experiment cases. Executing agents receive only the raw request. The hidden rubric scores:
 
 - real-need identification and alternative framing;
 - necessary context and exclusion discipline;
@@ -222,9 +239,9 @@ The reusable package contains no client data, credentials, source integrations, 
 ## Release Checks
 
 ```powershell
-python tools/check_release.py --tag v2.0.2 --release-notes CHANGELOG.md
+python tools/check_release.py --tag v2.1.0 --release-notes CHANGELOG.md
 python -m unittest discover -s tests -v
-python tools/build_skill_package.py --output dist/governed-analytics-workflow-v2.0.2.zip
+python tools/build_skill_package.py --output dist/governed-analytics-workflow-v2.1.0.zip
 ```
 
 Tagged releases build the same deterministic runtime package tested locally.

@@ -3,7 +3,6 @@
   "analysis_id": "replace-with-analysis-id",
   "status": "draft",
   "needs_discovery": {
-    "mode": "standard",
     "triggers": [],
     "stated_request": [],
     "request_decomposition": {
@@ -101,6 +100,18 @@
   "claims": [],
   "visuals": [],
   "recommendations": [],
+  "analysis_brief": {
+    "answer_status": "not_started",
+    "business_question": "",
+    "executive_answer": "",
+    "key_claim_ids": [],
+    "interpretation": "",
+    "alternative_explanations": [],
+    "limitations": [],
+    "unknowns": [],
+    "recommended_next_action": "",
+    "methods_refs": []
+  },
   "artifacts": [],
   "changes": [],
   "approvals": [],

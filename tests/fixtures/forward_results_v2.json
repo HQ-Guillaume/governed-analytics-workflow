@@ -1,5 +1,6 @@
 {
   "skill_version": "2.0.0",
+  "result_scope": "Historical v2.0.0 blind-release baseline; retained for comparison and not represented as a v2.1.0 rerun.",
   "run_date": "2026-07-15",
   "activation_surface": "installed runtime package",
   "blind_input_contract": "Executing agents received only the skill runtime, the raw request, and the requested output fields. They did not receive benchmark expectations or scoring criteria.",

@@ -36,10 +36,9 @@ class ForwardContractTests(unittest.TestCase):
             covered.update(case["secondary_problem_types"])
         self.assertEqual(PROBLEM_TYPES, covered)
 
-    def test_modes_and_confirmation_contracts_are_valid(self):
+    def test_material_confirmation_contracts_are_valid(self):
         for case in self.cases:
             with self.subTest(case=case["case_id"]):
-                self.assertIn(case["expected_mode"], {"light", "standard", "deep"})
                 self.assertIsInstance(case["requires_framing_confirmation"], bool)
                 self.assertIn(case["primary_problem_type"], PROBLEM_TYPES)
 
@@ -56,14 +55,13 @@ class ForwardContractTests(unittest.TestCase):
                 for phrase in case["required_phrases"]:
                     self.assertIn(phrase.lower(), reference_cache[relative_path])
 
-    def test_ambiguous_and_causal_requests_use_deep_discovery(self):
+    def test_ambiguous_and_causal_requests_require_material_confirmation(self):
         by_id = {case["case_id"]: case for case in self.cases}
         for case_id in (
             "ambiguous_stakeholder_request",
             "causal_request_without_design",
         ):
             case = by_id[case_id]
-            self.assertEqual("deep", case["expected_mode"])
             self.assertTrue(case["requires_framing_confirmation"])
 
 

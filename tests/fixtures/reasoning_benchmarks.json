@@ -24,7 +24,6 @@
     {
       "case_id": "renewal_risk_outreach",
       "raw_request": "Marketing wants a list of customers likely to leave next quarter. Use everything we know, especially whether they cancelled, and show the top twenty reasons so the team can call them tomorrow. A score and a colourful dashboard would be ideal.",
-      "expected_mode": "deep",
       "primary_problem_type": "make_predictions",
       "secondary_problem_types": ["discover_connections"],
       "required_routes": ["ambiguity", "prediction", "consequential_work"],
@@ -38,7 +37,6 @@
     {
       "case_id": "demand_forecast_staffing",
       "raw_request": "Operations needs next month's volume by day to set staffing. Last year's spreadsheet should be enough, but there is also a newer system with partial history. Please choose the most accurate model and give one exact number for every day.",
-      "expected_mode": "standard",
       "primary_problem_type": "make_predictions",
       "secondary_problem_types": ["find_patterns"],
       "required_routes": ["multiple_sources", "prediction"],
@@ -52,7 +50,6 @@
     {
       "case_id": "support_queue_routing",
       "raw_request": "Can you categorise new support messages into our current team names? The historical queue field is available, although agents often move tickets around. Accuracy should be above ninety-five percent and the output needs to go straight into routing.",
-      "expected_mode": "standard",
       "primary_problem_type": "categorise_things",
       "secondary_problem_types": [],
       "required_routes": ["ambiguity", "categorisation"],
@@ -66,7 +63,6 @@
     {
       "case_id": "case_priority_labels",
       "raw_request": "Risk wants every incoming case labelled low, medium, or high so the high ones can be handled first. There are past analyst labels, but no written policy, and management would prefer the model to agree with senior reviewers.",
-      "expected_mode": "deep",
       "primary_problem_type": "categorise_things",
       "secondary_problem_types": [],
       "required_routes": ["multiple_stakeholders", "categorisation", "consequential_work"],
@@ -80,7 +76,6 @@
     {
       "case_id": "daily_order_spikes",
       "raw_request": "Finance says daily completed orders look strange. Flag every day more than ten percent from the average, explain what caused it, and compare the warehouse report with the commerce dashboard because their totals differ.",
-      "expected_mode": "standard",
       "primary_problem_type": "spot_unusual",
       "secondary_problem_types": ["discover_connections"],
       "required_routes": ["multiple_sources", "anomaly_detection"],
@@ -94,7 +89,6 @@
     {
       "case_id": "service_latency_alerts",
       "raw_request": "Engineering wants one chart that spots unusual latency across all services and regions. Alert whenever anything is outside the normal range, but avoid noisy alerts and make sure a newly launched service is covered immediately.",
-      "expected_mode": "deep",
       "primary_problem_type": "spot_unusual",
       "secondary_problem_types": [],
       "required_routes": ["anomaly_detection", "consequential_work"],
@@ -108,7 +102,6 @@
     {
       "case_id": "feedback_priority_themes",
       "raw_request": "Product has four hundred comments copied from a survey and wants the five biggest complaints plus quotes for tomorrow's roadmap meeting. The comments are mostly from people who chose to answer after a redesign.",
-      "expected_mode": "standard",
       "primary_problem_type": "identify_themes",
       "secondary_problem_types": ["find_patterns"],
       "required_routes": ["sample_browser_or_qualitative_evidence", "theme_identification"],
@@ -122,7 +115,6 @@
     {
       "case_id": "mixed_corpus_themes",
       "raw_request": "Please combine meeting notes, chat transcripts, and closed support tickets to find what customers care about. Rank the themes by importance and show whether sentiment improved, even though each source covers a different period and audience.",
-      "expected_mode": "deep",
       "primary_problem_type": "identify_themes",
       "secondary_problem_types": ["find_patterns"],
       "required_routes": ["multiple_sources", "sample_browser_or_qualitative_evidence", "theme_identification"],
@@ -136,7 +128,6 @@
     {
       "case_id": "tutorial_purchase_connection",
       "raw_request": "Growth wants proof that people who watch the tutorial buy more. Compare watchers with non-watchers, break it down by channel, and recommend making the tutorial mandatory if the uplift is positive.",
-      "expected_mode": "deep",
       "primary_problem_type": "discover_connections",
       "secondary_problem_types": ["find_patterns"],
       "required_routes": ["multiple_sources", "outcome_comparison", "consequential_work"],
@@ -150,7 +141,6 @@
     {
       "case_id": "outcome_journey_behaviour",
       "raw_request": "Compare the journeys of people who completed the outcome with everyone else and tell us which content makes them convert. We have event data, session recordings from a sample, and a long list of clicks the stakeholder considers important.",
-      "expected_mode": "deep",
       "primary_problem_type": "discover_connections",
       "secondary_problem_types": ["find_patterns"],
       "required_routes": ["ambiguity", "multiple_sources", "outcome_comparison", "sample_browser_or_qualitative_evidence"],
@@ -164,7 +154,6 @@
     {
       "case_id": "completion_distribution",
       "raw_request": "The dashboard says eighty percent completion is low. Make a funnel by completion band, compare mobile and desktop, and explain where users drop. People with no tracked completion event are not currently in the export.",
-      "expected_mode": "standard",
       "primary_problem_type": "find_patterns",
       "secondary_problem_types": [],
       "required_routes": ["ambiguity"],
@@ -178,7 +167,6 @@
     {
       "case_id": "optional_content_consumption",
       "raw_request": "The team keeps adding optional content and wants to know what is consumed. There are aggregate interaction events, a few browser inspections, and a second tool that samples sessions. Please map every content area to a percentage and rank what should be removed.",
-      "expected_mode": "standard",
       "primary_problem_type": "find_patterns",
       "secondary_problem_types": ["discover_connections"],
       "required_routes": ["multiple_sources", "sample_browser_or_qualitative_evidence"],
@@ -188,6 +176,32 @@
       "data_plan_requirements": ["Availability-adjusted denominators", "Distinct interaction and visibility measures", "Representative source coverage", "Sensitivity across experience variants"],
       "claim_ceiling": "Descriptive consumption within measured availability and coverage; optimisation ideas are hypotheses.",
       "material_clarification": "Confirm the intended content decision only if keep, reorder, and remove imply different success criteria."
+    },
+    {
+      "case_id": "message_send_without_prior_open",
+      "raw_request": "The product report labels many message sends as having no prior open, although analysts can see some opens elsewhere in the event export. Explain the real causes using the analytics event stream and the delivery system log, including cases near the reporting-window boundary.",
+      "primary_problem_type": "find_patterns",
+      "secondary_problem_types": ["discover_connections"],
+      "required_routes": ["ambiguity", "multiple_sources", "instrumentation_reliability"],
+      "required_reasoning": ["Define the exact recipient, message, and send-to-open pairing rule.", "Recompute with a lookback before the reporting window and explicit timezone handling.", "Separate genuine first sends from duplicates, identity breaks, consent loss, and instrumentation changes."],
+      "necessary_context": ["Event and delivery semantics", "Stable recipient and message identifiers", "Consent and release history"],
+      "excluded_analysis": ["Treating every missing match as no user opening", "Joining only on recipient while ignoring message and sequence"],
+      "data_plan_requirements": ["Raw timestamped event stream with lookback", "Authoritative delivery log", "Duplicate and identity diagnostics", "Consent and release coverage"],
+      "claim_ceiling": "Measured match and telemetry-gap causes for the covered systems and period; unobserved opens remain unknown.",
+      "material_clarification": "Confirm the business pairing rule only if campaign-level and send-level definitions lead to different decisions."
+    },
+    {
+      "case_id": "checkout_experiment_decision",
+      "raw_request": "Product wants to declare a checkout-button experiment the winner after a promising first week and roll it out tomorrow. Traffic allocation changed during the test, some users returned on several devices, and the team checked the dashboard every morning.",
+      "primary_problem_type": "discover_connections",
+      "secondary_problem_types": ["find_patterns"],
+      "required_routes": ["experiment"],
+      "required_reasoning": ["Define eligibility and the randomization unit before comparing outcomes.", "Check allocation integrity, repeated identities, and sample-ratio mismatch.", "Account for planned sample size, repeated peeking, uncertainty, and guardrail outcomes."],
+      "necessary_context": ["Assignment implementation", "Planned stopping rule", "Primary and guardrail metrics"],
+      "excluded_analysis": ["Declaring a winner from the latest dashboard point estimate", "Treating devices as independent users when assignment is user-level"],
+      "data_plan_requirements": ["Assignment-level exposure table", "Eligibility and identity reconciliation", "Sample-ratio-mismatch check", "Primary effect, uncertainty, and guardrails"],
+      "claim_ceiling": "Experiment effect for the eligible assigned population under the validated assignment and stopping rules.",
+      "material_clarification": "Confirm the precommitted primary outcome and stopping rule if they were not recorded."
     }
   ]
 }

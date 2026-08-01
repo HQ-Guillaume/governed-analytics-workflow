@@ -2,7 +2,6 @@
   {
     "case_id": "ambiguous_stakeholder_request",
     "request": "A stakeholder sends a long message containing metrics, proposed cuts, and several loosely connected questions but does not state the decision the analysis should support.",
-    "expected_mode": "deep",
     "primary_problem_type": "find_patterns",
     "secondary_problem_types": ["discover_connections"],
     "requires_framing_confirmation": true,
@@ -12,7 +11,6 @@
   {
     "case_id": "clear_low_risk_trend",
     "request": "Describe how a stable operational metric changed by month for an internal monitoring review.",
-    "expected_mode": "light",
     "primary_problem_type": "find_patterns",
     "secondary_problem_types": [],
     "requires_framing_confirmation": false,
@@ -22,7 +20,6 @@
   {
     "case_id": "prediction_request",
     "request": "Estimate which active accounts are likely to renew next quarter.",
-    "expected_mode": "standard",
     "primary_problem_type": "make_predictions",
     "secondary_problem_types": [],
     "requires_framing_confirmation": true,
@@ -32,7 +29,6 @@
   {
     "case_id": "categorisation_request",
     "request": "Assign incoming support requests to the operational queue that should handle them.",
-    "expected_mode": "standard",
     "primary_problem_type": "categorise_things",
     "secondary_problem_types": [],
     "requires_framing_confirmation": true,
@@ -42,7 +38,6 @@
   {
     "case_id": "anomaly_request",
     "request": "Detect unusual daily movements in completed orders without treating every seasonal peak as an incident.",
-    "expected_mode": "standard",
     "primary_problem_type": "spot_unusual",
     "secondary_problem_types": [],
     "requires_framing_confirmation": true,
@@ -52,7 +47,6 @@
   {
     "case_id": "theme_request",
     "request": "Identify recurring themes in open-text feedback and explain how stable the themes are.",
-    "expected_mode": "standard",
     "primary_problem_type": "identify_themes",
     "secondary_problem_types": [],
     "requires_framing_confirmation": true,
@@ -62,7 +56,6 @@
   {
     "case_id": "connection_request",
     "request": "Explore whether adoption of a feature is associated with retention while avoiding a causal claim.",
-    "expected_mode": "standard",
     "primary_problem_type": "discover_connections",
     "secondary_problem_types": [],
     "requires_framing_confirmation": true,
@@ -72,7 +65,6 @@
   {
     "case_id": "pattern_request",
     "request": "Describe the distribution of completion states and how it varies by channel.",
-    "expected_mode": "standard",
     "primary_problem_type": "find_patterns",
     "secondary_problem_types": [],
     "requires_framing_confirmation": true,
@@ -82,7 +74,6 @@
   {
     "case_id": "causal_request_without_design",
     "request": "Prove that a newly launched experience caused the observed increase using only retrospective usage data.",
-    "expected_mode": "deep",
     "primary_problem_type": "discover_connections",
     "secondary_problem_types": [],
     "requires_framing_confirmation": true,
@@ -92,7 +83,6 @@
   {
     "case_id": "exclusive_distribution_visual",
     "request": "Show mutually exclusive completion-depth classes, including the people who did not begin.",
-    "expected_mode": "standard",
     "primary_problem_type": "find_patterns",
     "secondary_problem_types": [],
     "requires_framing_confirmation": true,

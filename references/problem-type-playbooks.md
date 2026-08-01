@@ -177,6 +177,12 @@ Q4: Which cases require investigation?    -> spot_unusual
 
 Keep separate evidence and claim limits for each branch. A predictive branch cannot answer why; an association branch cannot prove cause; a thematic branch cannot establish population prevalence without an appropriate sampling design.
 
+## Experiment Decision Route
+
+An experiment is a design route, not a seventh problem type. The outcome comparison will usually use `discover_connections`, while allocation, exposure, and segment patterns may use `find_patterns`.
+
+Before a winner or rollout claim, require eligibility, assignment and analysis units, sample-ratio-mismatch review, planned sample size, stopping and peeking treatment, effect size with uncertainty, implementation integrity, and guardrails. If randomization or stopping validity fails, lower the claim ceiling to a directional observed comparison.
+
 ## Problem-Type Review Checklist
 
 - Does the type match the answer the question seeks?

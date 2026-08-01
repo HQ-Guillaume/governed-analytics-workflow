@@ -22,8 +22,14 @@ jobs:
           python -m unittest discover -s tests -v
       - name: Build runtime package
         run: python tools/build_skill_package.py --output "dist/governed-analytics-workflow-$GITHUB_REF_NAME.zip"
+      - name: Build release notes and checksum
+        run: |
+          python tools/check_release.py --tag "$GITHUB_REF_NAME" --release-notes CHANGELOG.md --release-body-output dist/release-notes.md
+          sha256sum "dist/governed-analytics-workflow-$GITHUB_REF_NAME.zip" > "dist/governed-analytics-workflow-$GITHUB_REF_NAME.zip.sha256"
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          body_path: CHANGELOG.md
-          files: dist/governed-analytics-workflow-*.zip
+          body_path: dist/release-notes.md
+          files: |
+            dist/governed-analytics-workflow-*.zip
+            dist/governed-analytics-workflow-*.sha256

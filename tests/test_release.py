@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 import sys
 import tempfile
 import unittest
-import shutil
+import re
 from pathlib import Path
 from zipfile import ZIP_STORED, ZipFile
 
@@ -19,10 +20,12 @@ SPEC.loader.exec_module(build_skill_package)
 
 class ReleaseTest(unittest.TestCase):
     def test_release_check_passes(self) -> None:
-        for cache in ROOT.rglob("__pycache__"):
-            shutil.rmtree(cache)
+        project_text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        version_match = re.search(r'^version\s*=\s*"([^"]+)"', project_text, re.MULTILINE)
+        self.assertIsNotNone(version_match)
+        tag = f"v{version_match.group(1)}"
         result = subprocess.run(
-            [sys.executable, "-B", str(ROOT / "tools" / "check_release.py"), "--tag", "v2.0.2", "--release-notes", str(ROOT / "CHANGELOG.md")],
+            [sys.executable, "-B", str(ROOT / "tools" / "check_release.py"), "--tag", tag, "--release-notes", str(ROOT / "CHANGELOG.md")],
             cwd=ROOT,
             capture_output=True,
             text=True,
@@ -48,6 +51,31 @@ class ReleaseTest(unittest.TestCase):
         )
         self.assertNotEqual(0, result.returncode)
         self.assertIn("does not match project version", result.stderr)
+
+    def test_release_body_contains_only_current_version_section(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp) / "release-notes.md"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-B",
+                    str(ROOT / "tools" / "check_release.py"),
+                    "--tag",
+                    "v2.1.0",
+                    "--release-notes",
+                    str(ROOT / "CHANGELOG.md"),
+                    "--release-body-output",
+                    str(output),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            body = output.read_text(encoding="utf-8")
+            self.assertIn("## 2.1.0", body)
+            self.assertNotIn("## 2.0.2", body)
 
     def test_runtime_package_is_deterministic_and_scoped(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -144,8 +172,18 @@ class ReleaseTest(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-            for command in ("migrate", "validate", "quality"):
+            for command in ("migrate", "validate", "quality", "brief", "gate"):
                 self.assertIn(command, result.stdout)
+
+    def test_runtime_package_contains_release_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            archive_path = Path(temp) / "skill.zip"
+            build_skill_package.build(archive_path)
+            with ZipFile(archive_path) as archive:
+                metadata = archive.read("governed-analytics-workflow/assets/release.json")
+            release = json.loads(metadata)
+            self.assertEqual("2.1.0", release["version"])
+            self.assertEqual("2.0", release["schema_version"])
 
 
 if __name__ == "__main__":

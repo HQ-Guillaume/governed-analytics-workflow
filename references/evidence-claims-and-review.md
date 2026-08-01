@@ -81,6 +81,8 @@ permitted claim types
 
 Do not compare metrics with incompatible fingerprints unless the difference is intentional, visible, and justified.
 
+The guard hashes the fingerprint as SHA-256 over canonical JSON: keys sorted, compact separators, ASCII escapes, then UTF-8 bytes. The hash detects definition changes; it is not a claim that the query ran correctly. Store `fingerprint_hash` on validated, approved, or active metrics and snapshot it on dependent claims and artifacts.
+
 ## Quality Checks
 
 Record checks as structured evidence:
@@ -143,7 +145,21 @@ prediction_calibration
 label_quality
 anomaly_baseline
 theme_validation
+instrumentation_semantics
+instrumentation_duplicates
+instrumentation_missing_events
+instrumentation_consent_coverage
+instrumentation_change_history
+instrumentation_identity
+experiment_eligibility
+experiment_randomization_unit
+experiment_srm
+experiment_sample_size
+experiment_peeking
+experiment_guardrails
 ```
+
+The instrumentation categories apply only when web or product telemetry underpins a result. Identity is additionally required when user- or journey-level matching depends on stitching. The experiment categories apply only to randomized tests or winner/rollout decisions.
 
 ### Quality Gates
 
@@ -161,6 +177,35 @@ theme_validation
 - Exclude or separately describe outcomes that precede required exposure.
 - Keep full-period descriptive behaviour separate from contribution-oriented comparisons.
 - Treat missing timestamps, ambiguous ordering, and censoring as quality conditions, not silent assumptions.
+
+## Web And Product Instrumentation Reliability
+
+Before treating an event sequence as user behaviour:
+
+1. Define the event against the interface or server outcome.
+2. Preserve raw event time, collection time, timezone, visit, person, component, campaign, and attempt identifiers.
+3. Reproduce the pairing rule and include the required lookback before filtering the report window.
+4. Test retry, double-fire, batch, replay, and server/client duplicate signatures.
+5. Reconcile expected journey transitions with missing events.
+6. Quantify consent and blocker coverage by platform and event source.
+7. Test anonymous-to-known, device, session, and login identity changes when relevant.
+8. Align discontinuities with tag, schema, CMP, app, and product releases.
+
+Report mutually exclusive cause categories that reconcile to the original anomaly count. Use `unobservable` or `unknown` when collection cannot establish whether the behaviour occurred.
+
+## Practical Experiment Validity
+
+For an A/B test or rollout decision, record and validate:
+
+- eligible population and exclusion timing;
+- assignment mechanism, randomization unit, analysis unit, and exposure rule;
+- sample-ratio mismatch and allocation changes;
+- repeated users, devices, contamination, and attrition;
+- primary outcome, sample-size plan, stopping rule, and repeated peeking;
+- effect size, uncertainty, practical threshold, and segment stability;
+- guardrail outcomes and implementation integrity.
+
+If these cannot be recovered, report the observed comparison as incomplete or directional rather than retroactively inventing a clean experiment.
 
 ## Representativeness Gate
 

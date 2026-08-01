@@ -1,0 +1,45 @@
+{
+  "scenario_id": "form_send_without_open",
+  "synthetic": true,
+  "report_window": {
+    "start": "2026-07-01T00:00:00+02:00",
+    "end": "2026-07-31T23:59:59+02:00",
+    "timezone": "Europe/Paris",
+    "lookback_minutes": 30
+  },
+  "pairing_rule": "Nearest earlier unused form_open with the same visit and widget within 30 minutes.",
+  "sends": [
+    {"attempt_id": "S1", "naive_match": false, "final_reason": "report_boundary_lookback"},
+    {"attempt_id": "S2", "naive_match": true, "final_reason": "valid_match"},
+    {"attempt_id": "S3", "naive_match": false, "final_reason": "duplicate_send"},
+    {"attempt_id": "S4", "naive_match": false, "final_reason": "identity_change"},
+    {"attempt_id": "S5", "naive_match": false, "final_reason": "consent_unobservable"},
+    {"attempt_id": "S6", "naive_match": false, "final_reason": "widget_semantic_mismatch"}
+  ],
+  "required_routes": ["ambiguity", "multiple_sources", "instrumentation_reliability"],
+  "required_quality_categories": [
+    "instrumentation_semantics",
+    "instrumentation_duplicates",
+    "instrumentation_missing_events",
+    "instrumentation_consent_coverage",
+    "instrumentation_change_history"
+  ],
+  "expected_reconciliation": {
+    "send_rows": 6,
+    "naive_matched": 1,
+    "naive_unmatched": 5,
+    "explained_unmatched": 5,
+    "unexplained": 0
+  },
+  "required_brief_sections": [
+    "Business question",
+    "Executive answer",
+    "Evidence supporting the answer",
+    "Interpretation",
+    "Alternative explanations",
+    "Limitations",
+    "What remains unknown",
+    "Recommended next action",
+    "Methods and traceability"
+  ]
+}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Scaffold and validate governed analytics manifests without dependencies."""
+"""Scaffold, validate, gate, and summarise governed analytics runs."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import tempfile
+from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -78,7 +79,8 @@ CLAIM_STATUSES = {
 EVIDENCE_STATUSES = {"observation", "candidate", "validated", "rejected", "superseded"}
 EVIDENCE_POSTURES = {"verified", "directional", "assumed", "needs_validation"}
 ARTIFACT_STATUSES = {"draft", "active", "stale", "superseded", "rejected"}
-NEEDS_MODES = {"light", "standard", "deep"}
+LEGACY_NEEDS_MODES = {"light", "standard", "deep"}
+METRIC_STATUSES = {"draft", "needs_validation", "validated", "approved", "active", "rejected", "superseded"}
 CONTRACT_STATUSES = {"draft", "ready_for_review", "approved", "approved_with_caveats", "rejected"}
 TREE_STATUSES = {"draft", "confirmed", "operational"}
 BLUEPRINT_STATUSES = {"draft", "operational", "superseded"}
@@ -132,6 +134,18 @@ CONDITIONAL_QUALITY_CATEGORIES = {
     "label_quality",
     "anomaly_baseline",
     "theme_validation",
+    "instrumentation_semantics",
+    "instrumentation_duplicates",
+    "instrumentation_missing_events",
+    "instrumentation_consent_coverage",
+    "instrumentation_change_history",
+    "instrumentation_identity",
+    "experiment_eligibility",
+    "experiment_randomization_unit",
+    "experiment_srm",
+    "experiment_sample_size",
+    "experiment_peeking",
+    "experiment_guardrails",
 }
 QUALITY_CATEGORIES = ALWAYS_QUALITY_CATEGORIES | CONDITIONAL_QUALITY_CATEGORIES
 CONDITIONAL_REASONING_ROUTES = {
@@ -145,6 +159,8 @@ CONDITIONAL_REASONING_ROUTES = {
     "anomaly_detection",
     "theme_identification",
     "consequential_work",
+    "instrumentation_reliability",
+    "experiment",
 }
 ROUTE_REQUIRED_QUALITY = {
     "multiple_sources": {"join_cardinality"},
@@ -155,7 +171,24 @@ ROUTE_REQUIRED_QUALITY = {
     "anomaly_detection": {"anomaly_baseline"},
     "theme_identification": {"theme_validation", "representativeness"},
     "consequential_work": {"uncertainty", "sensitivity"},
+    "instrumentation_reliability": {
+        "instrumentation_semantics",
+        "instrumentation_duplicates",
+        "instrumentation_missing_events",
+        "instrumentation_consent_coverage",
+        "instrumentation_change_history",
+    },
+    "experiment": {
+        "experiment_eligibility",
+        "experiment_randomization_unit",
+        "experiment_srm",
+        "experiment_sample_size",
+        "experiment_peeking",
+        "experiment_guardrails",
+        "uncertainty",
+    },
 }
+ANALYSIS_BRIEF_STATUSES = {"not_started", "complete", "incomplete", "blocked"}
 MEASUREMENT_CARD_FIELDS = (
     "population",
     "grain",
@@ -225,10 +258,15 @@ SECRET_PATTERNS = (
     re.compile(r"\bgh[opusr]_[A-Za-z0-9]{20,}\b"),
     re.compile(r"\b(?:sk|rk)-[A-Za-z0-9_-]{20,}\b"),
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"\bAIza[0-9A-Za-z_-]{30,}\b"),
+    re.compile(r"\bxox[baprs]-[0-9A-Za-z-]{20,}\b"),
 )
 ABSOLUTE_PATH_PATTERNS = (
     re.compile(r"(?i)(?<![A-Za-z0-9_])[A-Z]:[\\/]+(?:Users|Documents and Settings)[\\/]+[^\s\"'<>]+"),
     re.compile(r"(?<![A-Za-z0-9_])/(?:home|Users)/+[^\s\"'<>]+"),
+    re.compile(r"(?i)(?<![A-Za-z0-9_])/(?:mnt/[a-z]/Users)/+[^\s\"'<>]+"),
+    re.compile(r"(?i)(?<![A-Za-z0-9_])\\\\[^\\\s]+\\(?:Users|Documents and Settings)\\[^\s\"'<>]+"),
 )
 TEXT_SUFFIXES = {
     ".md",
@@ -247,6 +285,7 @@ TEXT_SUFFIXES = {
     ".toml",
 }
 SKIP_DIRS = {".git", "__pycache__", ".pytest_cache", ".ruff_cache", "node_modules", "dist"}
+FINGERPRINT_ALGORITHM = "sha256"
 
 
 class ManifestError(ValueError):
@@ -255,9 +294,11 @@ class ManifestError(ValueError):
 
 def load_json(path: Path) -> dict[str, Any]:
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except FileNotFoundError as exc:
         raise ManifestError(f"manifest does not exist: {path}") from exc
+    except OSError as exc:
+        raise ManifestError(f"manifest cannot be read: {path} ({exc.__class__.__name__})") from exc
     except json.JSONDecodeError as exc:
         raise ManifestError(f"invalid JSON at line {exc.lineno}, column {exc.colno}: {exc.msg}") from exc
     if not isinstance(data, dict):
@@ -267,16 +308,83 @@ def load_json(path: Path) -> dict[str, Any]:
 
 def write_json_atomic(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=path.parent, newline="\n") as handle:
-        json.dump(data, handle, indent=2, ensure_ascii=True)
-        handle.write("\n")
-        temp_name = handle.name
-    os.replace(temp_name, path)
+    temp_name: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=path.parent, newline="\n") as handle:
+            temp_name = handle.name
+            json.dump(data, handle, indent=2, ensure_ascii=True)
+            handle.write("\n")
+        os.replace(temp_name, path)
+        temp_name = None
+    finally:
+        if temp_name is not None:
+            Path(temp_name).unlink(missing_ok=True)
 
 
 def stable_hash(value: Any) -> str:
     encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def as_list(value: Any) -> list[Any]:
+    """Return JSON arrays unchanged and treat every other value as empty."""
+
+    return value if isinstance(value, list) else []
+
+
+def string_list(item: dict[str, Any], field: str, label: str, errors: list[str]) -> list[str]:
+    """Validate a list of string references without iterating strings character by character."""
+
+    value = item.get(field, [])
+    if not isinstance(value, list):
+        errors.append(f"{label}.{field} must be a list")
+        return []
+    invalid = [index for index, entry in enumerate(value) if not isinstance(entry, str) or not entry.strip()]
+    if invalid:
+        errors.append(f"{label}.{field} must contain non-empty strings (invalid indexes: {invalid})")
+    return [entry for entry in value if isinstance(entry, str) and entry.strip()]
+
+
+def _json_output(args: argparse.Namespace) -> bool:
+    return getattr(args, "format", "text") == "json"
+
+
+def _emit_json(payload: dict[str, Any]) -> None:
+    print(json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=True))
+
+
+def collection_shape_errors(data: dict[str, Any], sections: Iterable[str]) -> list[str]:
+    errors: list[str] = []
+    for section in sections:
+        value = data.get(section, [])
+        if not isinstance(value, list):
+            errors.append(f"{section} must be a list")
+            continue
+        for index, item in enumerate(value):
+            if not isinstance(item, dict):
+                errors.append(f"{section}[{index}] must be an object")
+    return errors
+
+
+def parent_cycles(parent_map: dict[str, str]) -> list[list[str]]:
+    """Find directed parent cycles in linear time."""
+
+    finished: set[str] = set()
+    cycles: list[list[str]] = []
+    for start in sorted(parent_map):
+        if start in finished:
+            continue
+        path: list[str] = []
+        positions: dict[str, int] = {}
+        current: str | None = start
+        while current in parent_map and current not in finished and current not in positions:
+            positions[current] = len(path)
+            path.append(current)
+            current = parent_map[current]
+        if current in positions:
+            cycles.append(path[positions[current]:] + [current])
+        finished.update(path)
+    return cycles
 
 
 def require_nonempty(value: Any) -> bool:
@@ -320,7 +428,7 @@ def _missing_required(item: dict[str, Any], fields: Iterable[str]) -> list[str]:
 
 
 def _quality_gate_state(data: dict[str, Any]) -> tuple[set[str], list[str], list[str]]:
-    checks = data.get("quality_checks", [])
+    checks = as_list(data.get("quality_checks", []))
     categories = {
         str(item.get("category"))
         for item in checks
@@ -351,6 +459,26 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
     claims_required = _stage_at_least(active_stage, "claims")
     delivery_required = _stage_at_least(active_stage, "delivery")
 
+    # Normalize only top-level collections in a private copy. Validation remains
+    # strict, but malformed JSON values cannot crash later section checks.
+    data = copy.deepcopy(data)
+    for key in (
+        "sources",
+        "metrics",
+        "quality_checks",
+        "evidence",
+        "claims",
+        "visuals",
+        "recommendations",
+        "artifacts",
+        "changes",
+        "approvals",
+        "durable_context",
+    ):
+        if key in data and not isinstance(data.get(key), list):
+            errors.append(f"{key} must be a list")
+            data[key] = []
+
     for key in TOP_LEVEL_KEYS:
         if key not in data:
             errors.append(f"missing top-level key: {key}")
@@ -370,8 +498,8 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
     if not isinstance(discovery, dict):
         errors.append("needs_discovery must be an object")
         discovery = {}
-    if discovery.get("mode") not in NEEDS_MODES:
-        errors.append(f"invalid needs_discovery.mode: {discovery.get('mode')}")
+    if "mode" in discovery and discovery.get("mode") not in LEGACY_NEEDS_MODES:
+        errors.append(f"invalid deprecated needs_discovery.mode: {discovery.get('mode')}")
     if discovery.get("framing_status") not in {"proposed", "confirmed", "revised", "rejected"}:
         errors.append(f"invalid needs_discovery.framing_status: {discovery.get('framing_status')}")
     if discovery.get("framing_confidence") not in FRAMING_CONFIDENCE:
@@ -481,10 +609,8 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
             errors.append(f"{requirement_id} has invalid requirement_type: {requirement.get('requirement_type')}")
         if requirement.get("status") not in allowed_requirement_statuses:
             errors.append(f"{requirement_id} has invalid status: {requirement.get('status')}")
-        if not isinstance(requirement.get("question_ids"), list):
-            errors.append(f"{requirement_id}.question_ids must be a list")
-        if not isinstance(requirement.get("source_ids"), list):
-            errors.append(f"{requirement_id}.source_ids must be a list")
+        string_list(requirement, "question_ids", requirement_id, errors)
+        string_list(requirement, "source_ids", requirement_id, errors)
         if contract_required:
             missing = _missing_required(
                 requirement,
@@ -535,10 +661,9 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
             errors.append(f"{question_id} references missing parent question: {parent}")
         if parent == question_id:
             errors.append(f"{question_id} cannot be its own parent")
-        requirement_ids = question.get("data_requirement_ids", [])
-        if not isinstance(requirement_ids, list):
-            errors.append(f"{question_id}.data_requirement_ids must be a list")
-            requirement_ids = []
+        requirement_ids = string_list(question, "data_requirement_ids", question_id, errors)
+        string_list(question, "source_ids", question_id, errors)
+        string_list(question, "metric_ids", question_id, errors)
         for requirement_id in requirement_ids:
             if requirement_id not in data_requirements:
                 errors.append(f"{question_id} references missing data requirement: {requirement_id}")
@@ -551,11 +676,18 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
                 errors.append(f"{question_id} incomplete operational question: {', '.join(missing)}")
             if question.get("status") not in {"operational", "answered"}:
                 errors.append(f"{question_id} is not operational at contract stage")
+    parent_map = {
+        question_id: question.get("parent_id")
+        for question_id, question in questions.items()
+        if isinstance(question.get("parent_id"), str) and question.get("parent_id") in questions
+    }
+    for cycle in parent_cycles(parent_map):
+        errors.append(f"question tree contains a parent cycle: {' -> '.join(cycle)}")
     for requirement_id, requirement in data_requirements.items():
-        for question_id in requirement.get("question_ids", []):
+        for question_id in as_list(requirement.get("question_ids", [])):
             if question_id not in questions:
                 errors.append(f"{requirement_id} references missing question: {question_id}")
-            elif requirement_id not in questions[question_id].get("data_requirement_ids", []):
+            elif requirement_id not in as_list(questions[question_id].get("data_requirement_ids", [])):
                 errors.append(f"{requirement_id} is not linked back from {question_id}")
     if contract_required:
         if tree.get("status") != "operational":
@@ -587,12 +719,15 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
             disposition = item.get("disposition")
             if disposition not in COVERAGE_DISPOSITIONS:
                 errors.append(f"question_tree.coverage[{index}] has invalid disposition: {disposition}")
-            for question_id in item.get("question_ids", []):
+            question_refs = string_list(item, "question_ids", f"question_tree.coverage[{index}]", errors)
+            for question_id in question_refs:
                 if question_id not in questions:
                     errors.append(f"question_tree.coverage[{index}] references missing question: {question_id}")
             if disposition not in {"answered_by_question", "supporting_context"} and not require_nonempty(item.get("reason")):
                 errors.append(f"question_tree.coverage[{index}] requires a reason for disposition {disposition}")
-        for repeated in sorted({value for value in coverage_ids if coverage_ids.count(value) > 1}):
+        for repeated, count in sorted(Counter(coverage_ids).items()):
+            if count <= 1:
+                continue
             errors.append(f"duplicate request coverage item: {repeated}")
     if contract_required and stated_request_ids:
         missing_coverage = sorted(set(stated_request_ids) - set(coverage_ids))
@@ -645,7 +780,7 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
     if evidence_required and not sources:
         errors.append("evidence stage requires at least one source")
     for requirement_id, requirement in data_requirements.items():
-        for source_id in requirement.get("source_ids", []):
+        for source_id in as_list(requirement.get("source_ids", [])):
             if source_id not in sources:
                 errors.append(f"{requirement_id} references missing source: {source_id}")
 
@@ -664,12 +799,16 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
         "permitted_claim_types",
     )
     for metric_id, metric in metrics.items():
-        for question_id in metric.get("question_ids", []):
+        metric_question_ids = string_list(metric, "question_ids", metric_id, errors)
+        metric_source_ids = string_list(metric, "source_ids", metric_id, errors)
+        for question_id in metric_question_ids:
             if question_id not in questions:
                 errors.append(f"{metric_id} references missing question: {question_id}")
-        for source_id in metric.get("source_ids", []):
+        for source_id in metric_source_ids:
             if source_id not in sources:
                 errors.append(f"{metric_id} references missing source: {source_id}")
+        if metric.get("status") not in METRIC_STATUSES:
+            errors.append(f"{metric_id} has invalid status: {metric.get('status')}")
         if metric.get("metric_shape") not in METRIC_SHAPES:
             errors.append(f"{metric_id} has invalid metric_shape: {metric.get('metric_shape')}")
         permitted = metric.get("permitted_claim_types", [])
@@ -713,15 +852,19 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
                 if missing_values:
                     errors.append(f"{metric_id} observed_domain missing expected values: {missing_values}")
         metric_hashes[metric_id] = stable_hash(fingerprint)
-        if metric.get("fingerprint_hash") and metric.get("fingerprint_hash") != metric_hashes[metric_id]:
+        if (evidence_required or metric.get("status") in {"validated", "approved", "active"}) and not require_nonempty(
+            metric.get("fingerprint_hash")
+        ):
+            errors.append(f"{metric_id} requires fingerprint_hash")
+        elif metric.get("fingerprint_hash") and metric.get("fingerprint_hash") != metric_hashes[metric_id]:
             errors.append(f"{metric_id} fingerprint_hash is stale")
     if evidence_required and not metrics:
         errors.append("evidence stage requires at least one metric")
     for question_id, question in questions.items():
-        for source_id in question.get("source_ids", []):
+        for source_id in as_list(question.get("source_ids", [])):
             if source_id not in sources:
                 errors.append(f"{question_id} references missing source: {source_id}")
-        for metric_id in question.get("metric_ids", []):
+        for metric_id in as_list(question.get("metric_ids", [])):
             if metric_id not in metrics:
                 errors.append(f"{question_id} references missing metric: {metric_id}")
 
@@ -737,13 +880,16 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
             errors.append(f"{check_id} has invalid quality status: {status}")
         if check.get("severity") not in QUALITY_SEVERITIES:
             errors.append(f"{check_id} has invalid quality severity: {check.get('severity')}")
-        for question_id in check.get("question_ids", []):
+        check_question_ids = string_list(check, "question_ids", check_id, errors)
+        check_source_ids = string_list(check, "source_ids", check_id, errors)
+        check_metric_ids = string_list(check, "metric_ids", check_id, errors)
+        for question_id in check_question_ids:
             if question_id not in questions:
                 errors.append(f"{check_id} references missing question: {question_id}")
-        for source_id in check.get("source_ids", []):
+        for source_id in check_source_ids:
             if source_id not in sources:
                 errors.append(f"{check_id} references missing source: {source_id}")
-        for metric_id in check.get("metric_ids", []):
+        for metric_id in check_metric_ids:
             if metric_id not in metrics:
                 errors.append(f"{check_id} references missing metric: {metric_id}")
         if evidence_required and status in {"pass", "warning", "fail"} and not require_nonempty(check.get("evidence_ref")):
@@ -773,10 +919,12 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
         status = evidence_item.get("status")
         if status not in EVIDENCE_STATUSES:
             errors.append(f"{evidence_id} has invalid status: {status}")
-        for question_id in evidence_item.get("question_ids", []):
+        evidence_question_ids = string_list(evidence_item, "question_ids", evidence_id, errors)
+        evidence_source_ids = string_list(evidence_item, "source_ids", evidence_id, errors)
+        for question_id in evidence_question_ids:
             if question_id not in questions:
                 errors.append(f"{evidence_id} references missing question: {question_id}")
-        for source_id in evidence_item.get("source_ids", []):
+        for source_id in evidence_source_ids:
             if source_id not in sources:
                 errors.append(f"{evidence_id} references missing source: {source_id}")
         if status == "validated":
@@ -796,18 +944,22 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
             errors.append(f"{claim_id} has invalid claim_type: {claim.get('claim_type')}")
         if claim.get("temporal_scope") not in TEMPORAL_SCOPES:
             errors.append(f"{claim_id} has invalid temporal_scope: {claim.get('temporal_scope')}")
-        for question_id in claim.get("question_ids", []):
+        claim_question_ids = string_list(claim, "question_ids", claim_id, errors)
+        claim_metric_ids = string_list(claim, "metric_ids", claim_id, errors)
+        claim_evidence_refs = string_list(claim, "evidence_refs", claim_id, errors)
+        claim_quality_refs = string_list(claim, "quality_check_refs", claim_id, errors)
+        for question_id in claim_question_ids:
             if question_id not in questions:
                 errors.append(f"{claim_id} references missing question: {question_id}")
-        for metric_id in claim.get("metric_ids", []):
+        for metric_id in claim_metric_ids:
             if metric_id not in metrics:
                 errors.append(f"{claim_id} references missing metric: {metric_id}")
             elif metrics[metric_id].get("permitted_claim_types") and claim.get("claim_type") not in metrics[metric_id].get("permitted_claim_types", []):
                 errors.append(f"{claim_id} claim_type is not permitted by {metric_id}")
-        for evidence_id in claim.get("evidence_refs", []):
+        for evidence_id in claim_evidence_refs:
             if evidence_id not in evidence:
                 errors.append(f"{claim_id} references missing evidence: {evidence_id}")
-        for check_id in claim.get("quality_check_refs", []):
+        for check_id in claim_quality_refs:
             if check_id not in quality_checks:
                 errors.append(f"{claim_id} references missing quality check: {check_id}")
         snapshots = claim.get("metric_fingerprints", {})
@@ -819,13 +971,19 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
                 errors.append(f"{claim_id} snapshots missing metric: {metric_id}")
             elif snapshot != metric_hashes[metric_id] and status not in {"candidate", "rejected", "superseded"}:
                 errors.append(f"{claim_id} has stale metric fingerprint for {metric_id}")
-        comparison_ids = claim.get("comparison_metric_ids", [])
+        comparison_ids = string_list(claim, "comparison_metric_ids", claim_id, errors) if "comparison_metric_ids" in claim else []
         if comparison_ids:
             missing_metrics = [metric_id for metric_id in comparison_ids if metric_id not in metrics]
             if missing_metrics:
                 errors.append(f"{claim_id} comparison references missing metrics: {missing_metrics}")
             elif len(comparison_ids) >= 2:
-                compatibility_keys = claim.get("compatibility_keys", ["population", "calculation_grain", "time_window", "scope", "denominator", "deduplication"])
+                compatibility_keys = claim.get(
+                    "compatibility_keys",
+                    ["population", "calculation_grain", "time_window", "scope", "denominator", "deduplication"],
+                )
+                if not isinstance(compatibility_keys, list) or any(not isinstance(key, str) for key in compatibility_keys):
+                    errors.append(f"{claim_id}.compatibility_keys must be a list of strings")
+                    compatibility_keys = []
                 baseline = metrics[comparison_ids[0]].get("definition_fingerprint", {})
                 mismatches = [
                     key
@@ -851,32 +1009,32 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
                 errors.append(f"{claim_id} cannot be {status} without metric_ids unless directional")
             if not require_nonempty(claim.get("valid_as_of")):
                 errors.append(f"{claim_id} cannot be {status} without valid_as_of")
-            missing_snapshots = [metric_id for metric_id in claim.get("metric_ids", []) if metric_id not in snapshots]
+            missing_snapshots = [metric_id for metric_id in claim_metric_ids if metric_id not in snapshots]
             if missing_snapshots:
                 errors.append(f"{claim_id} missing metric fingerprint snapshots: {missing_snapshots}")
-            unvalidated = [evidence_id for evidence_id in claim.get("evidence_refs", []) if evidence.get(evidence_id, {}).get("status") != "validated"]
+            unvalidated = [evidence_id for evidence_id in claim_evidence_refs if evidence.get(evidence_id, {}).get("status") != "validated"]
             if unvalidated:
                 errors.append(f"{claim_id} uses evidence that is not validated: {unvalidated}")
             claim_source_ids = {
                 source_id
-                for metric_id in claim.get("metric_ids", [])
-                for source_id in metrics.get(metric_id, {}).get("source_ids", [])
+                for metric_id in claim_metric_ids
+                for source_id in as_list(metrics.get(metric_id, {}).get("source_ids", []))
             } | {
                 source_id
-                for evidence_id in claim.get("evidence_refs", [])
-                for source_id in evidence.get(evidence_id, {}).get("source_ids", [])
+                for evidence_id in claim_evidence_refs
+                for source_id in as_list(evidence.get(evidence_id, {}).get("source_ids", []))
             }
             relevant_warnings = {
                 check_id
                 for check_id, check in quality_checks.items()
                 if check.get("status") == "warning"
                 and (
-                    set(check.get("question_ids", [])) & set(claim.get("question_ids", []))
-                    or set(check.get("metric_ids", [])) & set(claim.get("metric_ids", []))
-                    or set(check.get("source_ids", [])) & claim_source_ids
+                    set(as_list(check.get("question_ids", []))) & set(claim_question_ids)
+                    or set(as_list(check.get("metric_ids", []))) & set(claim_metric_ids)
+                    or set(as_list(check.get("source_ids", []))) & claim_source_ids
                 )
             }
-            missing_warnings = sorted(relevant_warnings - set(claim.get("quality_check_refs", [])))
+            missing_warnings = sorted(relevant_warnings - set(claim_quality_refs))
             if missing_warnings:
                 errors.append(f"{claim_id} does not reference relevant quality warnings: {missing_warnings}")
         if claim.get("claim_type") == "causal" and status in {"validated", "approved"} and not require_nonempty(claim.get("causal_design_ref")):
@@ -886,7 +1044,7 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
 
     visuals = keyed(data.get("visuals", []), "visual_id", "visuals", errors)
     for visual_id, visual in visuals.items():
-        claim_ids = visual.get("claim_ids", [])
+        claim_ids = string_list(visual, "claim_ids", visual_id, errors)
         for claim_id in claim_ids:
             if claim_id not in claims:
                 errors.append(f"{visual_id} references missing claim: {claim_id}")
@@ -903,16 +1061,14 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
         structure = visual.get("data_structure", {}) if isinstance(visual.get("data_structure"), dict) else {}
         shape = structure.get("metric_shape")
         selected = str(visual.get("selected_chart", "")).lower()
-        if shape == "exclusive_distribution" and "funnel" in selected:
+        chart_tokens = set(re.findall(r"[a-z0-9]+", selected))
+        if shape == "exclusive_distribution" and "funnel" in chart_tokens:
             errors.append(f"{visual_id} cannot use a funnel for an exclusive distribution")
-        if structure.get("ordered") is False and "line" in selected:
+        if structure.get("ordered") is False and "line" in chart_tokens:
             errors.append(f"{visual_id} cannot use a line for unordered categories")
         if structure.get("categories_overlap") is True and visual.get("communication_function") in {"proportion", "part_to_whole"}:
             errors.append(f"{visual_id} cannot use part-to-whole encoding for overlapping categories")
-        visual_quality_refs = visual.get("quality_check_refs", [])
-        if not isinstance(visual_quality_refs, list):
-            errors.append(f"{visual_id}.quality_check_refs must be a list")
-            visual_quality_refs = []
+        visual_quality_refs = string_list(visual, "quality_check_refs", visual_id, errors)
         for check_id in visual_quality_refs:
             if check_id not in quality_checks:
                 errors.append(f"{visual_id} references missing quality check: {check_id}")
@@ -947,7 +1103,7 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
             inherited_warnings = {
                 check_id
                 for claim_id in claim_ids
-                for check_id in claims.get(claim_id, {}).get("quality_check_refs", [])
+                for check_id in as_list(claims.get(claim_id, {}).get("quality_check_refs", []))
                 if quality_checks.get(check_id, {}).get("status") == "warning"
             }
             missing_visual_warnings = sorted(inherited_warnings - set(visual_quality_refs))
@@ -969,7 +1125,7 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
         "revisit_condition",
     )
     for recommendation_id, recommendation in recommendations.items():
-        supporting = recommendation.get("supporting_claim_ids", [])
+        supporting = string_list(recommendation, "supporting_claim_ids", recommendation_id, errors)
         if claims_required and not supporting:
             errors.append(f"{recommendation_id} has no supporting_claim_ids")
         for claim_id in supporting:
@@ -982,6 +1138,35 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
             if missing:
                 errors.append(f"{recommendation_id} incomplete recommendation: {', '.join(missing)}")
 
+    brief = data.get("analysis_brief")
+    if brief is not None:
+        if not isinstance(brief, dict):
+            errors.append("analysis_brief must be an object")
+            brief = {}
+        if brief.get("answer_status") not in ANALYSIS_BRIEF_STATUSES:
+            errors.append(f"invalid analysis_brief.answer_status: {brief.get('answer_status')}")
+        brief_claim_ids = string_list(brief, "key_claim_ids", "analysis_brief", errors)
+        for field in ("alternative_explanations", "limitations", "unknowns", "methods_refs"):
+            string_list(brief, field, "analysis_brief", errors)
+        for claim_id in brief_claim_ids:
+            if claim_id not in claims:
+                errors.append(f"analysis_brief references missing claim: {claim_id}")
+            elif brief.get("answer_status") != "not_started" and claims[claim_id].get("status") != "approved":
+                errors.append(f"analysis_brief uses non-approved claim: {claim_id}")
+        if brief.get("answer_status") == "complete" and not brief_claim_ids:
+            errors.append("complete analysis_brief requires key_claim_ids")
+        if brief.get("answer_status") in {"incomplete", "blocked"} and not require_nonempty(brief.get("unknowns")):
+            errors.append(f"{brief.get('answer_status')} analysis_brief requires explicit unknowns")
+        if delivery_required:
+            if brief.get("answer_status") == "not_started":
+                errors.append("delivery stage requires a completed, incomplete, or blocked analysis brief")
+            missing_brief = _missing_required(
+                brief,
+                ("business_question", "executive_answer", "interpretation", "recommended_next_action"),
+            )
+            if missing_brief:
+                errors.append(f"delivery stage requires a decision-ready analysis brief: {', '.join(missing_brief)}")
+
     artifacts = keyed(data.get("artifacts", []), "artifact_id", "artifacts", errors)
     known_dependencies = set(questions) | set(sources) | set(metrics) | set(quality_checks) | set(evidence) | set(claims) | set(visuals) | set(recommendations)
     for artifact_id, artifact in artifacts.items():
@@ -991,7 +1176,8 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
             missing_artifact_context = _missing_required(artifact, ("purpose", "path", "depends_on"))
             if missing_artifact_context:
                 errors.append(f"{artifact_id} incomplete active artifact: {', '.join(missing_artifact_context)}")
-        for dependency in artifact.get("depends_on", []):
+        dependencies = string_list(artifact, "depends_on", artifact_id, errors)
+        for dependency in dependencies:
             if dependency not in known_dependencies:
                 errors.append(f"{artifact_id} references missing dependency: {dependency}")
         snapshots = artifact.get("metric_fingerprints", {})
@@ -1003,10 +1189,10 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
                 errors.append(f"{artifact_id} snapshots missing metric: {metric_id}")
             elif snapshot != metric_hashes[metric_id] and artifact.get("status") not in {"stale", "superseded"}:
                 errors.append(f"{artifact_id} has stale metric fingerprint for {metric_id}")
-        required_snapshots = {dependency for dependency in artifact.get("depends_on", []) if dependency in metrics}
-        for dependency in artifact.get("depends_on", []):
+        required_snapshots = {dependency for dependency in dependencies if dependency in metrics}
+        for dependency in dependencies:
             if dependency in claims:
-                required_snapshots.update(claims[dependency].get("metric_ids", []))
+                required_snapshots.update(as_list(claims[dependency].get("metric_ids", [])))
         if artifact.get("status") == "active":
             missing_snapshots = sorted(required_snapshots - set(snapshots))
             if missing_snapshots:
@@ -1030,8 +1216,6 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
         errors.append(f"analysis status {data.get('status')} is not ready for {active_stage} validation")
     if claims_required and not any(claim.get("status") in {"validated", "approved"} for claim in claims.values()):
         errors.append("claims stage requires at least one validated or approved claim")
-    if delivery_required and not any(visual.get("intended_use", "stakeholder") in STAKEHOLDER_VISUAL_USES for visual in visuals.values()):
-        errors.append("delivery stage requires at least one stakeholder visual")
     if delivery_required and not any(artifact.get("status") == "active" for artifact in artifacts.values()):
         errors.append("delivery stage requires at least one active artifact")
 
@@ -1048,7 +1232,11 @@ def migrate_v1_manifest(data: dict[str, Any]) -> dict[str, Any]:
     migrated = copy.deepcopy(data)
     migrated["schema_version"] = "2.0"
     migrated["status"] = "draft"
-    discovery = migrated.setdefault("needs_discovery", {})
+    discovery = migrated.get("needs_discovery")
+    if not isinstance(discovery, dict):
+        discovery = {}
+        migrated["needs_discovery"] = discovery
+    legacy_mode = discovery.pop("mode", None)
     discovery.setdefault(
         "request_decomposition",
         {
@@ -1069,7 +1257,7 @@ def migrate_v1_manifest(data: dict[str, Any]) -> dict[str, Any]:
     discovery.setdefault("construct_checks", [])
     discovery.setdefault("context_needs", [])
     discovery.setdefault("permitted_claim_types", [])
-    discovery.setdefault("user_decision_required", discovery.get("mode") in {"standard", "deep"})
+    discovery.setdefault("user_decision_required", legacy_mode in {"standard", "deep"})
     discovery["framing_status"] = "proposed"
 
     role_map = {
@@ -1082,15 +1270,21 @@ def migrate_v1_manifest(data: dict[str, Any]) -> dict[str, Any]:
         "unavailable": "unavailable",
         "out_of_scope": "rejected",
     }
-    tree = migrated.setdefault("question_tree", {})
+    tree = migrated.get("question_tree")
+    if not isinstance(tree, dict):
+        tree = {}
+        migrated["question_tree"] = tree
     tree["status"] = "draft"
-    contract = migrated.setdefault("contract", {})
+    contract = migrated.get("contract")
+    if not isinstance(contract, dict):
+        contract = {}
+        migrated["contract"] = contract
     if contract.get("status") in {"approved", "approved_with_caveats"}:
         contract["legacy_status"] = contract["status"]
         contract["status"] = "ready_for_review"
 
     data_plan: list[dict[str, Any]] = []
-    for question in tree.get("questions", []):
+    for question in as_list(tree.get("questions", [])):
         if not isinstance(question, dict):
             continue
         legacy_role = question.get("role")
@@ -1111,20 +1305,20 @@ def migrate_v1_manifest(data: dict[str, Any]) -> dict[str, Any]:
                     "question_ids": [question.get("question_id")],
                     "purpose": question.get("purpose", ""),
                     "requirement_type": question.get("role"),
-                    "source_ids": list(question.get("source_ids", [])),
+                    "source_ids": list(as_list(question.get("source_ids", []))),
                     "population": contract.get("population", ""),
                     "grain": contract.get("primary_grain", ""),
                     "scope": {},
                     "denominator": "",
-                    "measure_or_fields": list(question.get("metric_ids", [])),
+                    "measure_or_fields": list(as_list(question.get("metric_ids", []))),
                     "method": question.get("method", ""),
-                    "validation_rules": list(question.get("validation_rules", [])),
+                    "validation_rules": list(as_list(question.get("validation_rules", []))),
                     "status": "unresolved",
                 }
             )
     migrated["analysis_blueprint"] = {
         "status": "draft",
-        "context_required": any(item.get("role") == "context" for item in tree.get("questions", []) if isinstance(item, dict)),
+        "context_required": any(item.get("role") == "context" for item in as_list(tree.get("questions", [])) if isinstance(item, dict)),
         "context_rationale": "Migrated context branch; necessity must be reviewed before contract approval.",
         "conditional_routes": [],
         "data_plan": data_plan,
@@ -1132,6 +1326,8 @@ def migrate_v1_manifest(data: dict[str, Any]) -> dict[str, Any]:
     }
 
     migrated["quality_checks"] = []
+    if not isinstance(migrated.get("metrics"), list):
+        migrated["metrics"] = []
     for metric in migrated.get("metrics", []):
         if not isinstance(metric, dict):
             continue
@@ -1149,6 +1345,8 @@ def migrate_v1_manifest(data: dict[str, Any]) -> dict[str, Any]:
         metric.setdefault("sensitivity_checks", [])
         metric.setdefault("permitted_claim_types", [])
 
+    if not isinstance(migrated.get("claims"), list):
+        migrated["claims"] = []
     for claim in migrated.get("claims", []):
         if not isinstance(claim, dict):
             continue
@@ -1169,6 +1367,8 @@ def migrate_v1_manifest(data: dict[str, Any]) -> dict[str, Any]:
         claim.setdefault("decision_use", "")
         claim.setdefault("quality_check_refs", [])
 
+    if not isinstance(migrated.get("visuals"), list):
+        migrated["visuals"] = []
     for visual in migrated.get("visuals", []):
         if not isinstance(visual, dict):
             continue
@@ -1190,6 +1390,8 @@ def migrate_v1_manifest(data: dict[str, Any]) -> dict[str, Any]:
             "notes": "",
         }
 
+    if not isinstance(migrated.get("recommendations"), list):
+        migrated["recommendations"] = []
     for recommendation in migrated.get("recommendations", []):
         if not isinstance(recommendation, dict):
             continue
@@ -1205,6 +1407,8 @@ def migrate_v1_manifest(data: dict[str, Any]) -> dict[str, Any]:
         ):
             recommendation.setdefault(field, default)
 
+    if not isinstance(migrated.get("artifacts"), list):
+        migrated["artifacts"] = []
     for artifact in migrated.get("artifacts", []):
         if not isinstance(artifact, dict):
             continue
@@ -1212,7 +1416,23 @@ def migrate_v1_manifest(data: dict[str, Any]) -> dict[str, Any]:
             artifact["legacy_status"] = "active"
             artifact["status"] = "stale"
 
-    changes = migrated.setdefault("changes", [])
+    migrated["analysis_brief"] = {
+        "answer_status": "not_started",
+        "business_question": discovery.get("selected_framing", ""),
+        "executive_answer": "",
+        "key_claim_ids": [],
+        "interpretation": "",
+        "alternative_explanations": [],
+        "limitations": [],
+        "unknowns": ["Migrated evidence and claims require v2 review."],
+        "recommended_next_action": "Review the migrated contract, evidence, and claim posture.",
+        "methods_refs": [],
+    }
+
+    changes = migrated.get("changes")
+    if not isinstance(changes, list):
+        changes = []
+        migrated["changes"] = changes
     changes.append(
         {
             "change_id": "MIGRATION-V2",
@@ -1228,7 +1448,9 @@ def migrate_v1_manifest(data: dict[str, Any]) -> dict[str, Any]:
 
 def add_fingerprint_hashes(data: dict[str, Any]) -> int:
     changed = 0
-    for metric in data.get("metrics", []):
+    for metric in as_list(data.get("metrics", [])):
+        if not isinstance(metric, dict):
+            continue
         fingerprint = metric.get("definition_fingerprint")
         if not isinstance(fingerprint, dict):
             continue
@@ -1239,19 +1461,31 @@ def add_fingerprint_hashes(data: dict[str, Any]) -> int:
     return changed
 
 
-def stale_artifacts(data: dict[str, Any], write: bool = False) -> tuple[list[str], int]:
-    current = {
-        metric.get("metric_id"): stable_hash(metric.get("definition_fingerprint"))
-        for metric in data.get("metrics", [])
-        if metric.get("metric_id") and isinstance(metric.get("definition_fingerprint"), dict)
+def current_metric_hashes(data: dict[str, Any]) -> dict[str, str]:
+    return {
+        str(metric.get("metric_id")): stable_hash(metric.get("definition_fingerprint"))
+        for metric in as_list(data.get("metrics", []))
+        if isinstance(metric, dict)
+        and require_nonempty(metric.get("metric_id"))
+        and isinstance(metric.get("definition_fingerprint"), dict)
     }
+
+
+def fingerprint_mismatches(item: dict[str, Any], current: dict[str, str]) -> list[str]:
+    snapshots = item.get("metric_fingerprints", {})
+    if not isinstance(snapshots, dict):
+        return []
+    return [str(metric_id) for metric_id, value in snapshots.items() if current.get(str(metric_id)) != value]
+
+
+def stale_artifacts(data: dict[str, Any], write: bool = False) -> tuple[list[str], int]:
+    current = current_metric_hashes(data)
     stale: list[str] = []
     changed = 0
-    for claim in data.get("claims", []):
-        snapshots = claim.get("metric_fingerprints", {})
-        if not isinstance(snapshots, dict):
+    for claim in as_list(data.get("claims", [])):
+        if not isinstance(claim, dict):
             continue
-        mismatches = [metric_id for metric_id, value in snapshots.items() if current.get(metric_id) != value]
+        mismatches = fingerprint_mismatches(claim, current)
         if mismatches:
             claim_id = claim.get("claim_id", "<unknown>")
             stale.append(f"{claim_id}: {', '.join(mismatches)}")
@@ -1260,11 +1494,10 @@ def stale_artifacts(data: dict[str, Any], write: bool = False) -> tuple[list[str
                 claim["evidence_posture"] = "needs_validation"
                 claim["stale_reason"] = f"metric fingerprint changed: {', '.join(mismatches)}"
                 changed += 1
-    for artifact in data.get("artifacts", []):
-        snapshots = artifact.get("metric_fingerprints", {})
-        if not isinstance(snapshots, dict):
+    for artifact in as_list(data.get("artifacts", [])):
+        if not isinstance(artifact, dict):
             continue
-        mismatches = [metric_id for metric_id, value in snapshots.items() if current.get(metric_id) != value]
+        mismatches = fingerprint_mismatches(artifact, current)
         if mismatches:
             artifact_id = artifact.get("artifact_id", "<unknown>")
             stale.append(f"{artifact_id}: {', '.join(mismatches)}")
@@ -1280,20 +1513,33 @@ def iter_text_files(root: Path) -> Iterable[Path]:
         if root.suffix.lower() in TEXT_SUFFIXES:
             yield root
         return
-    for path in root.rglob("*"):
-        if not path.is_file() or path.suffix.lower() not in TEXT_SUFFIXES:
-            continue
-        if any(part in SKIP_DIRS for part in path.parts):
-            continue
-        yield path
+    try:
+        candidates = root.rglob("*")
+        for path in candidates:
+            try:
+                is_file = path.is_file()
+            except OSError:
+                continue
+            if not is_file or path.suffix.lower() not in TEXT_SUFFIXES:
+                continue
+            if any(part in SKIP_DIRS for part in path.parts):
+                continue
+            yield path
+    except OSError:
+        return
 
 
 def scan_path(root: Path) -> list[str]:
     findings: list[str] = []
+    if not root.exists():
+        return [f"{root}: path does not exist"]
     for path in iter_text_files(root):
         try:
-            text = path.read_text(encoding="utf-8")
+            text = path.read_text(encoding="utf-8-sig")
         except UnicodeDecodeError:
+            continue
+        except OSError as exc:
+            findings.append(f"{path}: cannot read ({exc.__class__.__name__})")
             continue
         for line_number, line in enumerate(text.splitlines(), start=1):
             for pattern in SECRET_PATTERNS:
@@ -1307,21 +1553,189 @@ def scan_path(root: Path) -> list[str]:
     return findings
 
 
+def _unique_text(values: Iterable[Any]) -> list[str]:
+    result: list[str] = []
+    for value in values:
+        if not isinstance(value, str) or not value.strip() or value.strip() in result:
+            continue
+        result.append(value.strip())
+    return result
+
+
+def build_analysis_brief(data: dict[str, Any]) -> dict[str, Any]:
+    """Build a decision-ready human view from governed manifest content."""
+
+    explicit = data.get("analysis_brief") if isinstance(data.get("analysis_brief"), dict) else {}
+    discovery = data.get("needs_discovery") if isinstance(data.get("needs_discovery"), dict) else {}
+    questions = [item for item in as_list(data.get("question_tree", {}).get("questions", [])) if isinstance(item, dict)] if isinstance(data.get("question_tree"), dict) else []
+    claims = [item for item in as_list(data.get("claims", [])) if isinstance(item, dict)]
+    approved_claims = [item for item in claims if item.get("status") == "approved"]
+    approved_by_id = {str(item.get("claim_id")): item for item in approved_claims if require_nonempty(item.get("claim_id"))}
+    requested_claim_ids = [item for item in as_list(explicit.get("key_claim_ids", [])) if isinstance(item, str)]
+    selected_claims = [approved_by_id[item] for item in requested_claim_ids if item in approved_by_id]
+    if not selected_claims:
+        selected_claims = approved_claims
+
+    quality_exceptions = [
+        item
+        for item in as_list(data.get("quality_checks", []))
+        if isinstance(item, dict) and item.get("status") in {"warning", "fail", "unknown"}
+    ]
+    blockers = [item for item in quality_exceptions if item.get("severity") == "critical" and item.get("status") in {"fail", "unknown"}]
+    unanswered = [
+        item
+        for item in questions
+        if item.get("role") in ACTIVE_QUESTION_ROLES and item.get("status") not in {"answered", "superseded"}
+    ]
+
+    business_question = str(explicit.get("business_question", "")).strip()
+    if not business_question:
+        business_question = str(discovery.get("inferred_business_need", "")).strip()
+    if not business_question:
+        business_question = next((str(item.get("text", "")).strip() for item in questions if item.get("role") == "decision"), "")
+    if not business_question:
+        business_question = "The decision question has not yet been defined."
+
+    executive_answer = str(explicit.get("executive_answer", "")).strip()
+    if not executive_answer and selected_claims:
+        executive_answer = " ".join(str(item.get("statement", "")).strip() for item in selected_claims[:3] if require_nonempty(item.get("statement")))
+    if not executive_answer:
+        executive_answer = "The available evidence does not yet support a decision-ready answer."
+
+    status = explicit.get("answer_status")
+    if status not in ANALYSIS_BRIEF_STATUSES or status == "not_started":
+        if selected_claims and not blockers and not unanswered:
+            status = "complete"
+        elif blockers and not selected_claims:
+            status = "blocked"
+        else:
+            status = "incomplete"
+
+    evidence_rows = [
+        {
+            "claim_id": str(claim.get("claim_id", "")),
+            "statement": str(claim.get("statement", "")).strip(),
+            "evidence_refs": [item for item in as_list(claim.get("evidence_refs", [])) if isinstance(item, str)],
+            "metric_ids": [item for item in as_list(claim.get("metric_ids", [])) if isinstance(item, str)],
+        }
+        for claim in selected_claims
+    ]
+
+    limitations = _unique_text(
+        [*as_list(explicit.get("limitations", []))]
+        + [f"{item.get('check_id', 'quality check')}: {item.get('impact')}" for item in quality_exceptions if require_nonempty(item.get("impact"))]
+        + [item.get("missingness") for item in selected_claims]
+        + [item.get("uncertainty") for item in selected_claims]
+    )
+    unknowns = _unique_text(
+        [*as_list(explicit.get("unknowns", []))]
+        + [str(item.get("text", "")).strip() for item in unanswered]
+        + [
+            f"{item.get('check_id', 'quality check')}: {item.get('required_action')}"
+            for item in quality_exceptions
+            if item.get("status") in {"fail", "unknown"} and require_nonempty(item.get("required_action"))
+        ]
+    )
+    if status in {"incomplete", "blocked"} and not unknowns:
+        unknowns = ["The decision question or supporting evidence is not yet complete."]
+    alternative_explanations = _unique_text(
+        [*as_list(explicit.get("alternative_explanations", []))]
+        + [value for claim in selected_claims for value in as_list(claim.get("alternative_explanations", []))]
+    )
+
+    interpretation = str(explicit.get("interpretation", "")).strip()
+    if not interpretation:
+        interpretation = (
+            "The statements above are the strongest approved interpretation supported by the recorded evidence."
+            if selected_claims
+            else "Interpretation is deferred until the evidence and quality gaps are resolved."
+        )
+    next_action = str(explicit.get("recommended_next_action", "")).strip()
+    if not next_action:
+        recommendations = [item for item in as_list(data.get("recommendations", [])) if isinstance(item, dict)]
+        next_action = next((str(item.get("action", "")).strip() for item in recommendations if require_nonempty(item.get("action"))), "")
+    if not next_action:
+        next_action = "Resolve the stated evidence gaps, then rerun the relevant analysis question."
+
+    metric_refs = [
+        str(metric.get("definition_fingerprint", {}).get("source_query_ref", "")).strip()
+        for metric in as_list(data.get("metrics", []))
+        if isinstance(metric, dict) and isinstance(metric.get("definition_fingerprint"), dict)
+    ]
+    methods_refs = _unique_text([*as_list(explicit.get("methods_refs", [])), *metric_refs])
+
+    return {
+        "analysis_id": str(data.get("analysis_id", "")).strip(),
+        "answer_status": status,
+        "business_question": business_question,
+        "executive_answer": executive_answer,
+        "key_evidence": evidence_rows,
+        "interpretation": interpretation,
+        "alternative_explanations": alternative_explanations,
+        "limitations": limitations,
+        "unknowns": unknowns,
+        "recommended_next_action": next_action,
+        "methods_refs": methods_refs,
+    }
+
+
+def render_analysis_brief(brief: dict[str, Any]) -> str:
+    def bullets(values: Iterable[Any], fallback: str) -> str:
+        rows = [f"- {value}" for value in values if require_nonempty(value)]
+        return "\n".join(rows) if rows else f"- {fallback}"
+
+    evidence = [
+        f"{item.get('claim_id', 'claim')}: {item.get('statement', '')} "
+        f"(evidence: {', '.join(item.get('evidence_refs', [])) or 'not recorded'}; "
+        f"metrics: {', '.join(item.get('metric_ids', [])) or 'not recorded'})"
+        for item in as_list(brief.get("key_evidence", []))
+        if isinstance(item, dict)
+    ]
+    return (
+        f"# Analysis Brief: {brief.get('analysis_id') or 'Untitled analysis'}\n\n"
+        f"**Answer status:** {str(brief.get('answer_status', 'incomplete')).replace('_', ' ').title()}\n\n"
+        f"## Business question\n\n{brief.get('business_question', '')}\n\n"
+        f"## Executive answer\n\n{brief.get('executive_answer', '')}\n\n"
+        f"## Evidence supporting the answer\n\n{bullets(evidence, 'No approved evidence is available yet.')}\n\n"
+        f"## Interpretation\n\n{brief.get('interpretation', '')}\n\n"
+        f"## Alternative explanations\n\n{bullets(as_list(brief.get('alternative_explanations', [])), 'None recorded.')}\n\n"
+        f"## Limitations\n\n{bullets(as_list(brief.get('limitations', [])), 'No material limitation recorded.')}\n\n"
+        f"## What remains unknown\n\n{bullets(as_list(brief.get('unknowns', [])), 'No material unknown recorded.')}\n\n"
+        f"## Recommended next action\n\n{brief.get('recommended_next_action', '')}\n\n"
+        f"## Methods and traceability\n\n{bullets(as_list(brief.get('methods_refs', [])), 'See the analysis manifest.')}\n"
+    )
+
+
 def command_init(args: argparse.Namespace) -> int:
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     manifest_path = output / "analysis-manifest.json"
     if manifest_path.exists() and not args.force:
-        print(f"ERROR: manifest already exists: {manifest_path}", file=sys.stderr)
+        if _json_output(args):
+            _emit_json({"command": "init", "passed": False, "error": f"manifest already exists: {manifest_path}"})
+        else:
+            print(f"ERROR: manifest already exists: {manifest_path}", file=sys.stderr)
         return 1
     data = load_json(TEMPLATE)
     data["analysis_id"] = args.analysis_id
     write_json_atomic(manifest_path, data)
     (output / "evidence").mkdir(exist_ok=True)
-    results = output / "results.md"
-    if not results.exists():
-        results.write_text(f"# Results\n\nAnalysis ID: `{args.analysis_id}`\n\nStatus: Draft\n", encoding="utf-8", newline="\n")
-    print(f"Created {manifest_path}")
+    brief_path = output / "analysis-brief.md"
+    if not brief_path.exists():
+        brief_path.write_text(render_analysis_brief(build_analysis_brief(data)), encoding="utf-8", newline="\n")
+    if _json_output(args):
+        _emit_json(
+            {
+                "command": "init",
+                "passed": True,
+                "analysis_id": args.analysis_id,
+                "manifest": str(manifest_path),
+                "analysis_brief": str(brief_path),
+            }
+        )
+    else:
+        print(f"Created {manifest_path}")
+        print(f"Created {brief_path}")
     return 0
 
 
@@ -1329,9 +1743,16 @@ def command_validate(args: argparse.Namespace) -> int:
     try:
         data = load_json(args.manifest)
     except ManifestError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
+        if _json_output(args):
+            _emit_json({"command": "validate", "passed": False, "load_error": str(exc), "errors": []})
+        else:
+            print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
     errors = validate_manifest(data, strict=args.strict, stage=args.stage)
+    payload = {"command": "validate", "passed": not errors, "stage": args.stage, "strict": args.strict, "errors": errors}
+    if _json_output(args):
+        _emit_json(payload)
+        return 1 if errors else 0
     if errors:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)
@@ -1345,20 +1766,39 @@ def command_quality(args: argparse.Namespace) -> int:
     try:
         data = load_json(args.manifest)
     except ManifestError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
+        if _json_output(args):
+            _emit_json({"command": "quality", "passed": False, "load_error": str(exc)})
+        else:
+            print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
     errors = validate_manifest(data)
     if errors:
+        if _json_output(args):
+            _emit_json({"command": "quality", "passed": False, "manifest_errors": errors})
+            return 1
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)
         print(f"Quality gate: INVALID MANIFEST ({len(errors)} error(s))")
         return 1
 
-    checks = [item for item in data.get("quality_checks", []) if isinstance(item, dict)]
+    checks = [item for item in as_list(data.get("quality_checks", [])) if isinstance(item, dict)]
     counts = {status: 0 for status in sorted(QUALITY_STATUSES)}
     for check in checks:
-        counts[str(check.get("status"))] += 1
+        if check.get("status") in counts:
+            counts[str(check.get("status"))] += 1
     _, blockers, warnings = _quality_gate_state(data)
+    passed = not blockers and not (warnings and getattr(args, "fail_on_warning", False))
+    if _json_output(args):
+        _emit_json(
+            {
+                "command": "quality",
+                "passed": passed,
+                "counts": counts,
+                "blockers": blockers,
+                "warnings": warnings,
+            }
+        )
+        return 0 if passed else 1
     print("Quality checks: " + ", ".join(f"{status}={counts[status]}" for status in sorted(counts)))
     if blockers:
         for check_id in blockers:
@@ -1380,8 +1820,11 @@ def command_migrate(args: argparse.Namespace) -> int:
         data = load_json(args.manifest)
         migrated = migrate_v1_manifest(data)
     except ManifestError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
+        if _json_output(args):
+            _emit_json({"command": "migrate", "passed": False, "load_error": str(exc)})
+        else:
+            print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
 
     if args.write:
         output = args.manifest
@@ -1389,10 +1832,35 @@ def command_migrate(args: argparse.Namespace) -> int:
         output = args.output
     else:
         output = args.manifest.with_name(f"{args.manifest.stem}.v2{args.manifest.suffix}")
-    if output.exists() and output != args.manifest and not args.force:
-        print(f"ERROR: migration output already exists: {output}; use --force to replace it", file=sys.stderr)
+    same_path = output.resolve() == args.manifest.resolve()
+    if same_path and not args.write:
+        message = "migration output resolves to the source manifest; use --write for explicit in-place replacement"
+        if _json_output(args):
+            _emit_json({"command": "migrate", "passed": False, "error": message})
+        else:
+            print(f"ERROR: {message}", file=sys.stderr)
+        return 1
+    if output.exists() and not same_path and not args.force:
+        message = f"migration output already exists: {output}; use --force to replace it"
+        if _json_output(args):
+            _emit_json({"command": "migrate", "passed": False, "error": message})
+        else:
+            print(f"ERROR: {message}", file=sys.stderr)
         return 1
     write_json_atomic(output, migrated)
+    migrated_from = str(data.get("schema_version"))
+    if _json_output(args):
+        _emit_json(
+            {
+                "command": "migrate",
+                "passed": True,
+                "from_schema": migrated_from,
+                "to_schema": "2.0",
+                "output": str(output.resolve()),
+                "review_required": migrated_from != "2.0",
+            }
+        )
+        return 0
     if data.get("schema_version") == "2.0":
         print(f"Manifest already uses schema 2.0; wrote unchanged copy to {output}")
     else:
@@ -1405,14 +1873,47 @@ def command_fingerprint(args: argparse.Namespace) -> int:
     try:
         data = load_json(args.manifest)
     except ManifestError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        if _json_output(args):
+            _emit_json({"command": "fingerprint", "passed": False, "load_error": str(exc)})
+        else:
+            print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    input_errors = collection_shape_errors(data, ("metrics",))
+    for index, metric in enumerate(as_list(data.get("metrics", []))):
+        if isinstance(metric, dict) and not isinstance(metric.get("definition_fingerprint"), dict):
+            input_errors.append(f"metrics[{index}] missing definition_fingerprint")
+    if input_errors:
+        if _json_output(args):
+            _emit_json({"command": "fingerprint", "passed": False, "errors": input_errors})
+        else:
+            for error in input_errors:
+                print(f"ERROR: {error}", file=sys.stderr)
+            print(f"Fingerprint update: FAIL ({len(input_errors)} error(s))")
         return 1
     changed = add_fingerprint_hashes(data)
     if args.write:
         write_json_atomic(args.manifest, data)
-    for metric in data.get("metrics", []):
+    fingerprints: dict[str, str] = {}
+    for metric in as_list(data.get("metrics", [])):
+        if not isinstance(metric, dict):
+            continue
         if metric.get("fingerprint_hash"):
-            print(f"{metric.get('metric_id')}: {metric['fingerprint_hash']}")
+            fingerprints[str(metric.get("metric_id", "<unknown>"))] = str(metric["fingerprint_hash"])
+    if _json_output(args):
+        _emit_json(
+            {
+                "command": "fingerprint",
+                "passed": True,
+                "algorithm": FINGERPRINT_ALGORITHM,
+                "canonicalization": "JSON sorted keys, compact separators, ASCII escapes, UTF-8 bytes",
+                "fingerprints": fingerprints,
+                "changes": changed,
+                "written": bool(args.write),
+            }
+        )
+        return 0
+    for metric_id, fingerprint_hash in fingerprints.items():
+        print(f"{metric_id}: {fingerprint_hash}")
     print(f"Fingerprint update: {changed} change(s){' written' if args.write else ' calculated'}")
     return 0
 
@@ -1421,11 +1922,35 @@ def command_stale(args: argparse.Namespace) -> int:
     try:
         data = load_json(args.manifest)
     except ManifestError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        if _json_output(args):
+            _emit_json({"command": "stale", "passed": False, "load_error": str(exc)})
+        else:
+            print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    input_errors = collection_shape_errors(data, ("metrics", "claims", "artifacts"))
+    if input_errors:
+        if _json_output(args):
+            _emit_json({"command": "stale", "passed": False, "errors": input_errors})
+        else:
+            for error in input_errors:
+                print(f"ERROR: {error}", file=sys.stderr)
+            print(f"Stale check: INVALID MANIFEST ({len(input_errors)} error(s))")
         return 1
     stale, changed = stale_artifacts(data, write=args.write)
     if args.write and changed:
         write_json_atomic(args.manifest, data)
+    passed = not stale
+    if _json_output(args):
+        _emit_json(
+            {
+                "command": "stale",
+                "passed": passed,
+                "stale": stale,
+                "updated": changed,
+                "written": bool(args.write),
+            }
+        )
+        return 1 if stale and args.fail_on_stale else 0
     if stale:
         for item in stale:
             print(f"STALE: {item}")
@@ -1437,6 +1962,9 @@ def command_stale(args: argparse.Namespace) -> int:
 
 def command_scan(args: argparse.Namespace) -> int:
     findings = scan_path(args.path.resolve())
+    if _json_output(args):
+        _emit_json({"command": "scan", "passed": not findings, "path": str(args.path.resolve()), "findings": findings})
+        return 1 if findings else 0
     if findings:
         for finding in findings:
             print(f"ERROR: {finding}", file=sys.stderr)
@@ -1446,25 +1974,108 @@ def command_scan(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_brief(args: argparse.Namespace) -> int:
+    try:
+        data = load_json(args.manifest)
+    except ManifestError as exc:
+        if _json_output(args):
+            _emit_json({"command": "brief", "passed": False, "load_error": str(exc)})
+        else:
+            print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    errors = validate_manifest(data)
+    if errors:
+        if _json_output(args):
+            _emit_json({"command": "brief", "passed": False, "manifest_errors": errors})
+        else:
+            for error in errors:
+                print(f"ERROR: {error}", file=sys.stderr)
+            print(f"Analysis brief: INVALID MANIFEST ({len(errors)} error(s))")
+        return 1
+    brief = build_analysis_brief(data)
+    rendered = render_analysis_brief(brief)
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(rendered, encoding="utf-8", newline="\n")
+    if _json_output(args):
+        _emit_json({"command": "brief", "passed": True, "output": str(args.output.resolve()) if args.output else None, "brief": brief})
+    elif args.output is not None:
+        print(f"Created {args.output.resolve()}")
+    else:
+        print(rendered, end="")
+    return 0
+
+
+def command_gate(args: argparse.Namespace) -> int:
+    try:
+        data = load_json(args.manifest)
+    except ManifestError as exc:
+        if _json_output(args):
+            _emit_json({"command": "gate", "passed": False, "load_error": str(exc)})
+        else:
+            print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    validation_errors = validate_manifest(data, stage=args.stage)
+    _, blockers, warnings = _quality_gate_state(data)
+    stale, _ = stale_artifacts(data)
+    scan_root = (args.scan_path if args.scan_path is not None else args.manifest.parent).resolve()
+    portability_findings = scan_path(scan_root)
+    passed = not validation_errors and not blockers and not stale and not portability_findings
+    if args.fail_on_warning and warnings:
+        passed = False
+    payload = {
+        "command": "gate",
+        "passed": passed,
+        "stage": args.stage,
+        "validation_errors": validation_errors,
+        "quality_blockers": blockers,
+        "quality_warnings": warnings,
+        "stale_dependencies": stale,
+        "portability_findings": portability_findings,
+    }
+    if _json_output(args):
+        _emit_json(payload)
+    else:
+        for error in validation_errors:
+            print(f"ERROR: {error}", file=sys.stderr)
+        for item in blockers:
+            print(f"BLOCKER: {item}")
+        for item in warnings:
+            print(f"WARNING: {item}")
+        for item in stale:
+            print(f"STALE: {item}")
+        for item in portability_findings:
+            print(f"ERROR: {item}", file=sys.stderr)
+        print("Analysis gate: PASS" if passed else "Analysis gate: FAIL")
+    return 0 if passed else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    def add_format_option(command_parser: argparse.ArgumentParser) -> None:
+        command_parser.add_argument("--format", choices=("text", "json"), default="text")
 
     init_parser = subparsers.add_parser("init", help="create an analysis folder and manifest")
     init_parser.add_argument("output", type=Path)
     init_parser.add_argument("--analysis-id", required=True)
     init_parser.add_argument("--force", action="store_true")
+    add_format_option(init_parser)
     init_parser.set_defaults(func=command_init)
 
     validate_parser = subparsers.add_parser("validate", help="validate manifest structure and governance")
     validate_parser.add_argument("manifest", type=Path)
     validate_parser.add_argument("--strict", action="store_true")
     validate_parser.add_argument("--stage", choices=sorted(VALIDATION_STAGES))
+    add_format_option(validate_parser)
     validate_parser.set_defaults(func=command_validate)
 
     quality_parser = subparsers.add_parser("quality", help="summarise quality checks and enforce blockers")
     quality_parser.add_argument("manifest", type=Path)
     quality_parser.add_argument("--fail-on-warning", action="store_true")
+    add_format_option(quality_parser)
     quality_parser.set_defaults(func=command_quality)
 
     migrate_parser = subparsers.add_parser("migrate", help="migrate a v1 manifest without inventing v2 approvals")
@@ -1472,22 +2083,40 @@ def build_parser() -> argparse.ArgumentParser:
     migrate_parser.add_argument("--output", type=Path)
     migrate_parser.add_argument("--write", action="store_true", help="replace the source manifest explicitly")
     migrate_parser.add_argument("--force", action="store_true", help="replace an existing separate output")
+    add_format_option(migrate_parser)
     migrate_parser.set_defaults(func=command_migrate)
 
     fingerprint_parser = subparsers.add_parser("fingerprint", help="calculate metric fingerprint hashes")
     fingerprint_parser.add_argument("manifest", type=Path)
     fingerprint_parser.add_argument("--write", action="store_true")
+    add_format_option(fingerprint_parser)
     fingerprint_parser.set_defaults(func=command_fingerprint)
 
     stale_parser = subparsers.add_parser("stale", help="detect artifacts with changed metric fingerprints")
     stale_parser.add_argument("manifest", type=Path)
     stale_parser.add_argument("--write", action="store_true")
     stale_parser.add_argument("--fail-on-stale", action="store_true")
+    add_format_option(stale_parser)
     stale_parser.set_defaults(func=command_stale)
 
     scan_parser = subparsers.add_parser("scan", help="scan text files for secrets and machine paths")
     scan_parser.add_argument("path", type=Path)
+    add_format_option(scan_parser)
     scan_parser.set_defaults(func=command_scan)
+
+    brief_parser = subparsers.add_parser("brief", help="render a stakeholder-ready analysis brief")
+    brief_parser.add_argument("manifest", type=Path)
+    brief_parser.add_argument("--output", type=Path)
+    add_format_option(brief_parser)
+    brief_parser.set_defaults(func=command_brief)
+
+    gate_parser = subparsers.add_parser("gate", help="run validation, quality, staleness, and portability checks once")
+    gate_parser.add_argument("manifest", type=Path)
+    gate_parser.add_argument("--stage", choices=sorted(VALIDATION_STAGES), default="delivery")
+    gate_parser.add_argument("--scan-path", type=Path)
+    gate_parser.add_argument("--fail-on-warning", action="store_true")
+    add_format_option(gate_parser)
+    gate_parser.set_defaults(func=command_gate)
     return parser
 
 
