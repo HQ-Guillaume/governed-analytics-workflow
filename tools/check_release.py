@@ -41,6 +41,7 @@ REQUIRED_FILES = (
     "tests/test_worked_example.py",
     "tests/fixtures/forward_cases.json",
     "tests/fixtures/forward_results_v2.json",
+    "tests/fixtures/forward_results_v2_1_1.json",
     "tests/fixtures/reasoning_benchmarks.json",
     "tests/fixtures/worked_web_product_example.json",
 )
@@ -132,6 +133,7 @@ def check_content() -> list[str]:
         "Analysis Brief",
         "instrumentation_reliability",
         "experiment",
+        "directly in the conversation",
     ):
         if term not in skill:
             errors.append(f"SKILL.md missing required contract text: {term}")
@@ -177,6 +179,17 @@ def check_content() -> list[str]:
                 errors.append("assets/release.json version does not match pyproject.toml")
             if release_metadata.get("schema_version") != "2.0":
                 errors.append("assets/release.json must identify schema 2.0")
+        try:
+            forward_results = json.loads(read("tests/fixtures/forward_results_v2_1_1.json"))
+        except json.JSONDecodeError as exc:
+            errors.append(f"current forward results are invalid JSON: {exc}")
+        else:
+            if forward_results.get("skill_version") != project_version():
+                errors.append("current forward-results version does not match pyproject.toml")
+            if len(forward_results.get("cases", [])) != 14:
+                errors.append("current forward results must cover all 14 benchmark cases")
+            if forward_results.get("summary", {}).get("passed") is not True:
+                errors.append("current forward results did not pass release acceptance")
     return errors
 
 

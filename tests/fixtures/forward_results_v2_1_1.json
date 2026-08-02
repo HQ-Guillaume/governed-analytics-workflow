@@ -1,0 +1,286 @@
+{
+  "skill_version": "2.1.1",
+  "result_scope": "Current v2.1.1 blind-release evaluation across the complete benchmark.",
+  "run_date": "2026-08-02",
+  "activation_surface": "freshly packaged runtime extracted outside the source repository",
+  "blind_input_contract": "Three fresh executing agents received only the packaged skill runtime, independent raw requests, and requested response fields. They did not receive benchmark expectations, scoring criteria, prior results, or the implementation diagnosis.",
+  "rubric_source": "tests/fixtures/reasoning_benchmarks.json",
+  "review_method": "Manual rubric review by the release implementation agent after blind execution; raw responses are retained in each case.",
+  "cases": [
+    {
+      "case_id": "renewal_risk_outreach",
+      "primary_problem_type": "make_predictions",
+      "response": "What the business needs is a safe, capacity-constrained outreach queue for customers who are still active at a defined scoring cut-off and could leave in the following quarter. I would define the target event, prediction date, horizon, eligible population, exclusions, and call capacity first. Customers cancelled before the cut-off are not future churn candidates; they belong in a separate win-back workflow. Historical cancellation, with its timestamp, is an outcome label for earlier cohorts, not a feature available to predict that same outcome.\n\nThe model would use only information available by each historical scoring date: contract and renewal dates, billing and payment status, pre-cut-off usage or purchases, service contacts, prior outreach, tenure, and stable account attributes. I would validate source authority, identifiers, joins, duplicate customers, missingness, outcome prevalence, censoring, and temporal order. Candidate models must beat a simple prevalence or recency rule in time-based backtests and be assessed on calibration, lift and precision at the actual call capacity, false-positive/false-negative trade-offs, segment performance, fairness where relevant, and drift.\n\nThe deliverable can be a calibrated risk score and ranked list with a small number of auditable evidence codes. Those codes describe predictive signals; they are not proved reasons why a customer will leave, and feature importance must not be presented as causality. A colourful dashboard is secondary to a validated queue and should show population, cut-off, coverage, calibration, uncertainty, and threshold trade-offs. No customer list, score, or top reasons can be claimed before source review. The material clarification is: what exact event counts as leaving, and should already-cancelled customers be handled separately? Once confirmed, I can build and validate the historical cohorts; for tomorrow, use a human-reviewed interim queue rather than an unvalidated model.",
+      "scores": {
+        "real_need_identification": 3,
+        "alternative_framing": 2,
+        "necessary_context": 2,
+        "irrelevant_analysis_excluded": 2,
+        "data_plan_completeness": 3,
+        "definition_and_method_correctness": 3,
+        "evidence_limits_and_claim_discipline": 3,
+        "presentation_clarity": 2
+      },
+      "total": 20,
+      "critical_failure": false,
+      "result": "pass",
+      "review_note": "Separated future churn prediction from win-back, excluded cancellation leakage, and specified temporal validation, calibration, outreach capacity, and non-causal reason codes."
+    },
+    {
+      "case_id": "demand_forecast_staffing",
+      "primary_problem_type": "make_predictions",
+      "response": "The real decision is how much staffing capacity to schedule, not which model sounds most sophisticated. I would first define the forecasted unit (for example arrivals rather than completions), locations or queues, operating calendar, timezone, daily cut-off, and next-month horizon. If staffing is managed within the day, daily totals alone are insufficient: the plan also needs intraday arrival shape, handling time or productivity, service target, shrinkage, and a staffing rule.\n\nLast year's spreadsheet and the newer system must be mapped separately for authority, definition, grain, freshness, coverage, missing-versus-zero days, duplicates, revisions, and overlap. I would reconcile the common period before stitching them; partial newer history may still be the better authority, while the spreadsheet may supply older seasonality. Required context includes weekdays, holidays and closures, promotions or planned events, outages, backlog and any known process or system change.\n\nModel choice would be made by rolling-origin backtests at the same horizon, against seasonal-naive and recent-trend baselines, using an error measure tied to staffing cost and reviewing bias, holiday performance, segment errors, residuals, stability, and interval coverage. I can provide one point forecast for each day, but it must be accompanied by prediction intervals and staffing scenarios; an exact-looking number is not an exact future. I cannot call any model 'most accurate' or produce daily values before the sources and holdout evidence are available, and one year may not support reliable annual seasonality. The next action is to confirm the operational volume definition, scope and timezone, then reconcile the overlapping sources and backtest candidate forecasts before converting the approved forecast into staffed capacity.",
+      "scores": {
+        "real_need_identification": 3,
+        "alternative_framing": 2,
+        "necessary_context": 2,
+        "irrelevant_analysis_excluded": 2,
+        "data_plan_completeness": 3,
+        "definition_and_method_correctness": 3,
+        "evidence_limits_and_claim_discipline": 3,
+        "presentation_clarity": 2
+      },
+      "total": 20,
+      "critical_failure": false,
+      "result": "pass",
+      "review_note": "Reframed model selection as staffing capacity planning, reconciled partial sources, required rolling-origin backtests and prediction intervals, and rejected false exactness."
+    },
+    {
+      "case_id": "support_queue_routing",
+      "primary_problem_type": "categorise_things",
+      "response": "The useful target is the current team that can own and resolve a new message with minimal avoidable transfer, not whichever queue happened to be recorded last. Because agents move tickets for triage, workload, escalation and organizational changes, the historical queue field is a noisy process trace rather than an approved label. I would map historical team names to the current taxonomy and define mutually exclusive, multi-team, unknown and out-of-scope handling. The material business choice is whether 'correct' means first accountable team or eventual resolving team; I recommend first team able to resolve without transfer.\n\nTraining evidence should include message content and structured fields available at arrival, timestamps, full queue-transfer history, resolution ownership, language and channel, plus a representative, independently adjudicated sample under the current taxonomy. We would check label provenance and reviewer agreement, class balance, taxonomy changes, duplicate or near-duplicate leakage, privacy, temporal stability, and whether post-routing fields leak the answer. A time-based holdout should report per-team precision and recall, macro performance, a confusion matrix, transfer-rate impact, coverage, and error costs. Overall accuracy alone can exceed 95% by favoring a dominant queue, so the requested threshold is not an adequate release gate and cannot be promised before testing.\n\nThe deployment-safe output is a team prediction with confidence and an abstain/manual-review path, not forced routing for every message. It should run in shadow mode first, with monitoring, rollback, drift checks and periodic label review; only high-confidence classes that meet agreed per-team safety thresholds should be auto-routed. Until those gates pass, any result is a candidate categorisation, not production-ready routing.",
+      "scores": {
+        "real_need_identification": 3,
+        "alternative_framing": 2,
+        "necessary_context": 2,
+        "irrelevant_analysis_excluded": 2,
+        "data_plan_completeness": 3,
+        "definition_and_method_correctness": 3,
+        "evidence_limits_and_claim_discipline": 3,
+        "presentation_clarity": 2
+      },
+      "total": 20,
+      "critical_failure": false,
+      "result": "pass",
+      "review_note": "Rejected mutable queue history as clean ground truth, defined current-taxonomy labels, per-class validation, abstention, shadow deployment, monitoring, and rollback."
+    },
+    {
+      "case_id": "case_priority_labels",
+      "primary_problem_type": "categorise_things",
+      "response": "This request contains a material construct ambiguity: 'priority' could mean expected harm and urgency, or agreement with senior reviewers. Those are not automatically the same target. With no written policy, past labels may encode inconsistent judgment, changing practice or reviewer bias, so training directly on them would reproduce disagreement rather than establish risk. Before modelling, the risk owner must approve what low, medium and high mean, the action and service level attached to each, the cost of false negatives and false positives, and an escalation/unknown rule.\n\nI would turn that policy into an adjudication rubric, sample cases across periods, reviewers and important groups, measure inter-rater agreement, examine disagreement and negative cases, and create a versioned gold set with senior review. Inputs must be restricted to information available when a case arrives; later investigation, outcome or handling fields would be leakage. Validation should use a temporal holdout and report the full confusion matrix, per-class precision and recall with special attention to missed high-priority cases, uncertainty, calibration where a risk score is used, subgroup performance, stability and drift.\n\nThe strongest defensible claim would be that the model reproduces the approved rubric on representative unseen cases. Agreement with reviewers does not by itself prove objective risk, fairness, or the correct priority, and no result can be promoted while label quality is unknown. The safe operating design is decision support with reasons, abstention and mandatory human escalation; it should not automatically downgrade cases until the high-priority miss rate and governance gates are approved. The necessary next action is a short policy-and-adjudication session with the accountable risk owner; modelling should wait for that definition.",
+      "scores": {
+        "real_need_identification": 3,
+        "alternative_framing": 2,
+        "necessary_context": 2,
+        "irrelevant_analysis_excluded": 2,
+        "data_plan_completeness": 3,
+        "definition_and_method_correctness": 3,
+        "evidence_limits_and_claim_discipline": 3,
+        "presentation_clarity": 2
+      },
+      "total": 20,
+      "critical_failure": false,
+      "result": "pass",
+      "review_note": "Identified the unresolved priority construct, required an approved policy and adjudicated labels, emphasized missed-high-risk errors, and kept automated downgrading behind human control."
+    },
+    {
+      "case_id": "daily_order_spikes",
+      "primary_problem_type": "spot_unusual",
+      "response": "Finance first needs a reconciled definition of completed orders and a trustworthy daily series; only then can we distinguish business anomalies from reporting defects. I would separate three questions: which source is authoritative for the finance use, why warehouse and commerce totals differ, and which dates depart materially from an appropriate expected baseline. The requested 10% distance from the overall average can be shown as a transparent secondary rule, but it is not a defensible primary anomaly test because weekday mix, trend, seasonality, holidays and growth can manufacture flags.\n\nFor both sources I need the raw order or fulfilment records and status history, report logic and filters, extraction cut-off, order identifier, completion timestamp and timezone, line-versus-order grain, partial shipments, cancellations, returns, test orders, regions, duplicates and late revisions. After confirming semantic compatibility, I would reconcile at order level where identifiers permit, or at the narrowest common grain otherwise. Every daily gap should be decomposed into mutually exclusive reason categories that sum back to the observed difference, with any residual marked unknown.\n\nAnomaly detection should use a robust trend-and-seasonality baseline or control limits, include known calendar and operational events, and be backtested on known incidents with threshold sensitivity and false-positive review. The output would list each date, both counts, reconciled gap, expected range, deviation, flag basis, and investigation status. Promotions, outages, stock constraints or process changes may support a diagnostic explanation when temporally aligned and independently evidenced, but an unusual day or association is not proof of cause. No dates or causes can be asserted before source access. The material clarification is which business definition and source should be authoritative for Finance, for what period and timezone; then reconciliation should precede spike investigation.",
+      "scores": {
+        "real_need_identification": 3,
+        "alternative_framing": 2,
+        "necessary_context": 2,
+        "irrelevant_analysis_excluded": 2,
+        "data_plan_completeness": 3,
+        "definition_and_method_correctness": 3,
+        "evidence_limits_and_claim_discipline": 3,
+        "presentation_clarity": 2
+      },
+      "total": 20,
+      "critical_failure": false,
+      "result": "pass",
+      "review_note": "Put source reconciliation before anomaly detection, replaced the global-average rule with a seasonal baseline, required mutually exclusive discrepancy causes, and limited causal wording."
+    },
+    {
+      "case_id": "service_latency_alerts",
+      "primary_problem_type": "spot_unusual",
+      "response": "What the business needs is an investigation queue for materially abnormal service-region latency with a controlled false-alert rate, including cold-start coverage; one global raw-latency threshold would not serve that decision. Define the observation grain as service x region x fixed time bucket and fingerprint the latency statistic, request eligibility, timezone, minimum volume, and missing-data treatment. The single overview should compare normalized departure from each service-region's own expected band, for example a service-region heatmap with severity, current value, expected range, and a new-service marker, rather than compare unlike raw latencies. Build robust baselines using sufficient history, trend, seasonality, traffic mix, deployments, incidents, and pipeline-health signals. For a launch with no history, alert immediately against an engineering SLO or a documented peer/hierarchical prior, label that baseline provisional, and graduate it to its own baseline as evidence accumulates. Suppress noise with minimum-volume rules, persistence or change-point confirmation, hysteresis, cooldown and deduplication, and a multiple-series alert budget; backtest thresholds on known incidents and quiet periods, review false positives and false negatives, and test sensitivity to windows and thresholds. An out-of-range point establishes an anomaly, not user harm or cause, and pipeline anomalies must be separated from service anomalies. Next, confirm the canonical latency/SLO definition and what operational response each severity should trigger, then provide history, request volumes, launch/deployment metadata, known incidents, and data-quality indicators for backtesting.",
+      "scores": {
+        "real_need_identification": 3,
+        "alternative_framing": 2,
+        "necessary_context": 2,
+        "irrelevant_analysis_excluded": 2,
+        "data_plan_completeness": 3,
+        "definition_and_method_correctness": 3,
+        "evidence_limits_and_claim_discipline": 3,
+        "presentation_clarity": 2
+      },
+      "total": 20,
+      "critical_failure": false,
+      "result": "pass",
+      "review_note": "Defined service-region baselines, cold-start fallbacks, multiple-series noise controls, backtesting, and a clear boundary between anomaly, user harm, and cause."
+    },
+    {
+      "case_id": "feedback_priority_themes",
+      "primary_problem_type": "identify_themes",
+      "response": "The defensible goal for tomorrow is an actionable shortlist of post-redesign pain points voiced by survey respondents, not the five biggest complaints among all users. I would need the raw comments, exact survey prompt and recruitment method, response denominator if known, timestamps, redesign version or exposure, language, relevant user or journey segments, and permission to use anonymized excerpts. Using a reviewed multi-label codebook, I would count unique respondents mentioning each complaint, assess severity or blockage and segment breadth separately from frequency, retain negative cases, and use a second reviewer or adjudicated sample to check coding agreement and theme stability. The five themes would be ranked under an explicit rule within this corpus, with respondent counts and denominators, segment exceptions, and exact traceable quotes that have been privacy-reviewed; quotes illustrate themes but do not prove prevalence. Because respondents self-selected after the redesign, the strongest claim is qualitative or directional for this respondent corpus, not an estimate of complaint prevalence or roadmap importance in the full user base. No themes or quotes can be supplied before the comments are inspected. The useful next step is to provide the corpus and metadata now for a clearly labelled rapid readout tomorrow, then validate the shortlist with a representative sample or behavioural evidence before making large roadmap commitments.",
+      "scores": {
+        "real_need_identification": 3,
+        "alternative_framing": 2,
+        "necessary_context": 2,
+        "irrelevant_analysis_excluded": 2,
+        "data_plan_completeness": 3,
+        "definition_and_method_correctness": 3,
+        "evidence_limits_and_claim_discipline": 3,
+        "presentation_clarity": 2
+      },
+      "total": 20,
+      "critical_failure": false,
+      "result": "pass",
+      "review_note": "Bounded findings to a self-selected corpus, separated frequency from priority and population prevalence, and required codebook review, negative cases, agreement, and traceable quotes."
+    },
+    {
+      "case_id": "mixed_corpus_themes",
+      "primary_problem_type": "identify_themes",
+      "response": "The real need is a source-aware view of customer priorities and whether experience is changing, not a pooled leaderboard that lets incompatible corpora create false precision. One material clarification is required before ranking: which decision and target customer population the ranking serves, and whether importance means account breadth, frequency, severity, commercial risk, or strategic relevance. I would inventory each source's period, audience and selection mechanism, completeness, author role, language, natural grain, identifiers, duplicates, privacy constraints, and available customer, segment, date, severity, and outcome fields. A common human-reviewed codebook can then be applied separately to meeting notes, chats, and closed tickets, producing source-specific denominators and a theme-by-source triangulation matrix; cross-source convergence is useful evidence, but counts should be combined only when populations, periods, grains, and a prespecified weighting rule are defensibly compatible. Sentiment improvement must be tested within stable source-population slices over comparable periods using one validated rubric, uncertainty, and composition checks; different periods and audiences cannot jointly establish improvement. Reviewer agreement, negative cases, theme stability, deduplication, source coverage, and selection bias are blocking checks. Claims will describe the observed corpora, not all customers, and notes or quotes remain illustrative unless provenance supports more. Next, align the source inventories and any overlapping period; deliver separate rankings plus triangulation first, and create a harmonized repeated sample if a defensible sentiment trend is required.",
+      "scores": {
+        "real_need_identification": 3,
+        "alternative_framing": 2,
+        "necessary_context": 2,
+        "irrelevant_analysis_excluded": 2,
+        "data_plan_completeness": 3,
+        "definition_and_method_correctness": 3,
+        "evidence_limits_and_claim_discipline": 3,
+        "presentation_clarity": 2
+      },
+      "total": 20,
+      "critical_failure": false,
+      "result": "pass",
+      "review_note": "Kept incompatible corpora and denominators visible, defined importance before ranking, required within-source time comparisons, and blocked naive pooled sentiment trends."
+    },
+    {
+      "case_id": "tutorial_purchase_connection",
+      "primary_problem_type": "discover_connections",
+      "response": "The decision is whether requiring the tutorial increases net purchase outcomes enough to justify the added friction. A positive watcher/non-watcher difference is not proof because watching is self-selected and may reflect prior intent. Define an eligible population that had a genuine tutorial opportunity before purchase, a user or account analysis grain, an operational watcher definition, a server-confirmed purchase outcome and fixed follow-up window, and acquisition channel as known at eligibility. Before comparison, validate event meaning, tutorial availability, temporal order, anonymous-to-known identity, duplicates, missing events, consent coverage, channel attribution, releases, and equal outcome observation; exclude post-purchase watching. Report counts, purchase rates, absolute and relative differences, and uncertainty overall and by sufficiently sized channel. Then test overlap and adjust only for defensible pre-exposure factors such as prior engagement, new versus returning status, device, geography, campaign, product, and price; check channel composition, small cells, multiple comparisons, reverse causality, and sensitivity. Even a robust adjusted observational result supports an association, not a causal uplift, so it cannot justify making the tutorial mandatory. The next action is to provide the event contract, tutorial-eligibility logic, server purchase source, identity rules, and channel definition, then run a pre-specified randomized mandatory-versus-optional test among eligible users with purchase as the primary outcome and completion, abandonment, time to purchase, support burden, refunds, and satisfaction as guardrails.",
+      "scores": {
+        "real_need_identification": 3,
+        "alternative_framing": 2,
+        "necessary_context": 2,
+        "irrelevant_analysis_excluded": 2,
+        "data_plan_completeness": 3,
+        "definition_and_method_correctness": 3,
+        "evidence_limits_and_claim_discipline": 3,
+        "presentation_clarity": 2
+      },
+      "total": 20,
+      "critical_failure": false,
+      "result": "pass",
+      "review_note": "Reframed proof as observational association, enforced pre-outcome eligibility and instrumentation checks, addressed composition and uncertainty, and proposed a randomized follow-up with guardrails."
+    },
+    {
+      "case_id": "outcome_journey_behaviour",
+      "primary_problem_type": "discover_connections",
+      "response": "The useful objective is to identify pre-outcome content exposures and behaviours associated with completion, explain plausible journey differences, and turn them into testable optimization hypotheses; these sources cannot by themselves establish which content makes people convert. The exact outcome, eligible population or journey start, and follow-up window are materially necessary definitions before any comparison, because 'everyone else' mixes people with different opportunities and incomplete observation. Required evidence includes raw events and server-confirmed outcomes, content catalog and availability, timestamps and timezone, session and person or account identifiers, channel, device, new or returning status, consent state, and product or tracking release history, plus the sampling frame for recordings. Treat the stakeholder's click list as hypotheses: a click is not necessarily exposure, attention, value, or cause. Compare completers with eligible non-completers given equivalent opportunity and follow-up, use only behaviour observable before the outcome, handle censoring, and keep full-period path descriptions separate. Quantify association sizes and uncertainty; check event semantics, duplicates, missing transitions, identity stitching, consent coverage, availability denominators, composition and confounding, multiple comparisons, sequence sensitivity, and stability across cohorts. Session recordings can validate interface meaning and illustrate mechanisms, but a sample cannot estimate prevalence unless it passes a representativeness gate. The deliverable should be a validated pre-outcome journey comparison and ranked hypothesis list with clear alternative explanations; causal wording and content changes require a randomized or credible quasi-experimental follow-up.",
+      "scores": {
+        "real_need_identification": 3,
+        "alternative_framing": 2,
+        "necessary_context": 2,
+        "irrelevant_analysis_excluded": 2,
+        "data_plan_completeness": 3,
+        "definition_and_method_correctness": 3,
+        "evidence_limits_and_claim_discipline": 3,
+        "presentation_clarity": 2
+      },
+      "total": 20,
+      "critical_failure": false,
+      "result": "pass",
+      "review_note": "Separated pre-outcome association from causation, validated requested clicks as constructs, bounded recordings to illustrative use, and specified eligibility, censoring, confounding, and sequence checks."
+    },
+    {
+      "case_id": "completion_distribution",
+      "primary_problem_type": "find_patterns",
+      "response": "The real decision is whether this journey needs product or content changes, and whether the priority differs by device—not whether an 80% label is inherently ‘low.’ That judgement needs an agreed target, historical baseline, or comparable journey.\n\nUse all eligible journey starts in an agreed period and timezone, at one defined attempt/session grain. Derive each attempt’s highest valid completion after deduplication. Mutually exclusive completion bands are a distribution, not a funnel; show ordered exclusive bars. Use a cumulative stage-reach funnel only if the thresholds are nested and every eligible attempt can reach every threshold. Include eligible attempts with no completion event as an explicit state, but do not silently equate missing telemetry with zero progress. Compare mobile and desktop using identical eligibility rules, with counts, rates, uncertainty, and composition checks.\n\nRequired evidence is the eligible-start population, event and threshold definitions, raw timestamps and attempt/session/user identifiers, device classification, consent and tracking coverage, and product/tag release history. Validate event semantics, duplicate or replayed progress events, domain completeness, missing-versus-zero handling, monotonicity, bucket sensitivity, small cells, and stability over time. Describe observed losses between adjacent thresholds; investigate errors, exits, latency, content step, and release timing as possible diagnostics, not proven motives or causes.\n\nWith the current export conditioned on having a completion event, population completion and true drop-off cannot be estimated; only the distribution among event reporters is supportable. The next action is to add the full eligible-start denominator and no-event rows, then confirm the attempt definition and threshold logic before producing the device comparison.",
+      "scores": {
+        "real_need_identification": 3,
+        "alternative_framing": 2,
+        "necessary_context": 2,
+        "irrelevant_analysis_excluded": 2,
+        "data_plan_completeness": 3,
+        "definition_and_method_correctness": 3,
+        "evidence_limits_and_claim_discipline": 3,
+        "presentation_clarity": 2
+      },
+      "total": 20,
+      "critical_failure": false,
+      "result": "pass",
+      "review_note": "Restored the eligible-start denominator, separated missing telemetry from zero, distinguished exclusive distributions from cumulative funnels, and refused unsupported drop-off explanations."
+    },
+    {
+      "case_id": "optional_content_consumption",
+      "primary_problem_type": "find_patterns",
+      "response": "The business need is to identify optional content that is rarely consumed when it is actually available and is low-value enough to test removing—not to rank raw interaction volume. First create a finite inventory of every content area, its aliases, placements, intended purpose, and any legally, operationally, or accessibility-critical areas that cannot be judged on usage alone.\n\nFor each area, the defensible percentage is an eligible consumption rate at a predeclared grain: unique sessions or users with a validated consumption signal divided by units in which that area was available and observable. An interaction is only a proxy for consumption; passive content may require a validated visibility signal, and neither dwell time nor a click proves value. If availability or visibility is not measured, report raw use and the denominator gap rather than manufacturing a percentage.\n\nTreat aggregate interaction events as potentially useful for counts only after semantic and denominator checks. Browser inspections can validate labels, layout, availability rules, and event behaviour but are illustrative, not prevalence evidence. The sampled-session tool can support a percentage only if its sampling frame, inclusion probabilities or weights, coverage, and important variants are known and representative; otherwise it is illustrative or, at most, directional. Do not combine source percentages until population, grain, period, identifiers, and semantics are compatible. Validate aliases, duplicate events, missing zero states, consent coverage, device/page/audience composition, releases, sample size, and uncertainty.\n\nLow observed use can reflect low availability, poor discoverability, or measurement gaps, and observational usage does not establish that removal is harmless. Rank areas only after the owner defines the removal objective and guardrails, using eligible-use uncertainty alongside business purpose, outcome evidence, maintenance cost, and risk. The useful next action is to instrument exposure/visibility gaps, then rank candidates for review or a controlled removal test—not declare removals from the present evidence.",
+      "scores": {
+        "real_need_identification": 3,
+        "alternative_framing": 2,
+        "necessary_context": 2,
+        "irrelevant_analysis_excluded": 2,
+        "data_plan_completeness": 3,
+        "definition_and_method_correctness": 3,
+        "evidence_limits_and_claim_discipline": 3,
+        "presentation_clarity": 2
+      },
+      "total": 20,
+      "critical_failure": false,
+      "result": "pass",
+      "review_note": "Defined availability-adjusted denominators, separated interaction, visibility, consumption, and value, bounded sampled evidence, and turned removal rankings into measured test hypotheses."
+    },
+    {
+      "case_id": "message_send_without_prior_open",
+      "primary_problem_type": "find_patterns",
+      "response": "The real decision is whether to fix the product journey, event instrumentation, or report matching logic. Frame the population as all delivery-system-confirmed sends in the reporting window and timezone, at one deduplicated send-attempt grain. Treat the delivery log as authoritative for send outcome and the analytics stream as evidence of observable client opens.\n\nDefine a reproducible pairing rule before analysis: pair each send to the nearest eligible earlier open using the documented visit/conversation/composer identifiers and maximum lookback; allow an open to support only the number of sends permitted by the product contract. Load the lookback period before filtering to the reporting window so an open just before the boundary can match a send just after it. Preserve raw event, collection, and server times; send/attempt, conversation, component, session, device, anonymous and known-person identifiers; consent state; entry path; and release history.\n\nReconcile the initially unmatched sends into mutually exclusive categories whose counts sum to the original anomaly population. Candidate categories to test—not assumed findings—include pre-window opens omitted by the query, duplicate or retried send records, anonymous-to-known or cross-device identity changes, conversation/component key mismatches, clock or late-arrival effects, consent- or blocker-driven unobservable opens, instrumentation defects or releases, valid send paths that do not require the tracked open, and genuinely unexplained cases. Validate join cardinality, event semantics, ordering, deduplication, source coverage, and identifier bridges.\n\nThe sources can establish observed sequences, delivery outcomes, and measurement or query defects. They cannot prove that a person did not open when client collection was unavailable. No cause prevalence should be stated before the reconciliation runs. Next, obtain both raw sources with the required pre-window buffer, confirm valid send paths and the pairing interval, and return a cause table with counts, denominators, evidence, and an explicit unobservable/unknown remainder.",
+      "scores": {
+        "real_need_identification": 3,
+        "alternative_framing": 2,
+        "necessary_context": 2,
+        "irrelevant_analysis_excluded": 2,
+        "data_plan_completeness": 3,
+        "definition_and_method_correctness": 3,
+        "evidence_limits_and_claim_discipline": 3,
+        "presentation_clarity": 2
+      },
+      "total": 20,
+      "critical_failure": false,
+      "result": "pass",
+      "review_note": "Specified send-attempt pairing, pre-window lookback, identifiers, ordering, and mutually exclusive reconciliation causes while keeping unobservable opens explicitly unknown."
+    },
+    {
+      "case_id": "checkout_experiment_decision",
+      "primary_problem_type": "discover_connections",
+      "response": "The decision is whether the evidence supports rollout, not whether the first-week point estimate looks promising. On the stated facts, do not declare a winner or make a full rollout tomorrow: allocation changes, cross-device repeat users, and daily peeking are unresolved threats to the experiment’s estimand and uncertainty.\n\nReconstruct the experiment contract: eligible population, assignment mechanism, randomization and analysis units, exposure rule, primary checkout outcome and conversion window, practical minimum effect, planned sample and duration, stopping rule, and guardrails such as revenue, payment failures, abandonment, refunds, latency, and support impact. Required data includes immutable assignment logs with allocation probabilities and change times, exposure records, user/account/device links, repeat visits, primary outcomes, guardrails, exclusions, and implementation/release history.\n\nValidate sample-ratio mismatch overall and within each allocation phase; whether randomization remained intact; cross-device variant contamination; repeat-user handling at the intended unit; attrition and missing outcomes; implementation integrity; effective sample size; calendar and novelty stability; and effect size with an uncertainty interval against the practical threshold. Daily dashboard checks invalidate an unadjusted fixed-horizon winner call when they influenced stopping; use a prespecified sequentially valid method or continue to a new locked horizon. Allocation changes may be recoverable only if probabilities were recorded and randomization remained valid, using a justified phase-aware analysis. If device-level assignment conflicts with a user-level outcome, the intended user-level causal claim may not be recoverable.\n\nUntil those gates pass, the result is a directional observed comparison, not a validated causal winner. Freeze the decision criteria and run an independent reanalysis now. If validity is recoverable, decide from effect, uncertainty, practical importance, and guardrails; if not, restart a clean test. Any urgent canary rollout should be treated as a separate reversible operational decision with monitoring and rollback, not as proof that the experiment won.",
+      "scores": {
+        "real_need_identification": 3,
+        "alternative_framing": 2,
+        "necessary_context": 2,
+        "irrelevant_analysis_excluded": 2,
+        "data_plan_completeness": 3,
+        "definition_and_method_correctness": 3,
+        "evidence_limits_and_claim_discipline": 3,
+        "presentation_clarity": 2
+      },
+      "total": 20,
+      "critical_failure": false,
+      "result": "pass",
+      "review_note": "Blocked the premature winner call, reconstructed assignment and stopping contracts, required SRM, identity, peeking, uncertainty, and guardrail checks, and distinguished an urgent canary from causal proof."
+    }
+  ],
+  "summary": {
+    "cases": 14,
+    "problem_types": 6,
+    "minimum_score": 20,
+    "maximum_score": 20,
+    "critical_failures": 0,
+    "passed": true,
+    "comparison_note": "The historical v2.0.0 six-case baseline is retained separately; different execution agents mean score changes should not be interpreted as a controlled model-quality uplift."
+  }
+}

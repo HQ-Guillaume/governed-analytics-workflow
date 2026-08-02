@@ -1139,6 +1139,7 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
                 errors.append(f"{recommendation_id} incomplete recommendation: {', '.join(missing)}")
 
     brief = data.get("analysis_brief")
+    brief_claim_ids: list[str] = []
     if brief is not None:
         if not isinstance(brief, dict):
             errors.append("analysis_brief must be an object")
@@ -1166,6 +1167,25 @@ def validate_manifest(data: dict[str, Any], strict: bool = False, stage: str | N
             )
             if missing_brief:
                 errors.append(f"delivery stage requires a decision-ready analysis brief: {', '.join(missing_brief)}")
+
+    if delivery_required:
+        brief_is_decision_ready = (
+            isinstance(brief, dict)
+            and brief.get("answer_status") in {"complete", "incomplete", "blocked"}
+            and not _missing_required(
+                brief,
+                ("business_question", "executive_answer", "interpretation", "recommended_next_action"),
+            )
+            and (brief.get("answer_status") != "complete" or bool(brief_claim_ids))
+            and (brief.get("answer_status") not in {"incomplete", "blocked"} or require_nonempty(brief.get("unknowns")))
+        )
+        has_passed_stakeholder_visual = any(
+            visual.get("intended_use", "stakeholder") in STAKEHOLDER_VISUAL_USES
+            and visual.get("qa_status") == "passed"
+            for visual in visuals.values()
+        )
+        if not brief_is_decision_ready and not has_passed_stakeholder_visual:
+            errors.append("delivery stage requires a decision-ready analysis brief or a stakeholder visual with passed rendered QA")
 
     artifacts = keyed(data.get("artifacts", []), "artifact_id", "artifacts", errors)
     known_dependencies = set(questions) | set(sources) | set(metrics) | set(quality_checks) | set(evidence) | set(claims) | set(visuals) | set(recommendations)
@@ -1974,19 +1994,60 @@ def command_scan(args: argparse.Namespace) -> int:
     return 0
 
 
+def _evaluate_gate(
+    data: dict[str, Any],
+    *,
+    stage: str,
+    scan_root: Path,
+    fail_on_warning: bool = False,
+) -> dict[str, Any]:
+    validation_errors = validate_manifest(data, stage=stage)
+    _, blockers, warnings = _quality_gate_state(data)
+    stale, _ = stale_artifacts(data)
+    portability_findings = scan_path(scan_root.resolve())
+    passed = not validation_errors and not blockers and not stale and not portability_findings
+    if fail_on_warning and warnings:
+        passed = False
+    return {
+        "passed": passed,
+        "stage": stage,
+        "validation_errors": validation_errors,
+        "quality_blockers": blockers,
+        "quality_warnings": warnings,
+        "stale_dependencies": stale,
+        "portability_findings": portability_findings,
+    }
+
+
 def command_brief(args: argparse.Namespace) -> int:
     try:
         data = load_json(args.manifest)
     except ManifestError as exc:
         if _json_output(args):
-            _emit_json({"command": "brief", "passed": False, "load_error": str(exc)})
+            _emit_json(
+                {
+                    "command": "brief",
+                    "generated": False,
+                    "analysis_ready": False,
+                    "delivery_ready": False,
+                    "load_error": str(exc),
+                }
+            )
         else:
             print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     errors = validate_manifest(data)
     if errors:
         if _json_output(args):
-            _emit_json({"command": "brief", "passed": False, "manifest_errors": errors})
+            _emit_json(
+                {
+                    "command": "brief",
+                    "generated": False,
+                    "analysis_ready": False,
+                    "delivery_ready": False,
+                    "manifest_errors": errors,
+                }
+            )
         else:
             for error in errors:
                 print(f"ERROR: {error}", file=sys.stderr)
@@ -1997,8 +2058,28 @@ def command_brief(args: argparse.Namespace) -> int:
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(rendered, encoding="utf-8", newline="\n")
+    analysis_validation_errors = validate_manifest(data, stage="claims")
+    _, analysis_blockers, analysis_warnings = _quality_gate_state(data)
+    analysis_ready = not analysis_validation_errors and not analysis_blockers
+    delivery = _evaluate_gate(data, stage="delivery", scan_root=args.manifest.parent)
     if _json_output(args):
-        _emit_json({"command": "brief", "passed": True, "output": str(args.output.resolve()) if args.output else None, "brief": brief})
+        _emit_json(
+            {
+                "command": "brief",
+                "generated": True,
+                "answer_status": brief["answer_status"],
+                "analysis_ready": analysis_ready,
+                "delivery_ready": delivery["passed"],
+                "output": str(args.output.resolve()) if args.output else None,
+                "analysis": {
+                    "validation_errors": analysis_validation_errors,
+                    "quality_blockers": analysis_blockers,
+                    "quality_warnings": analysis_warnings,
+                },
+                "delivery": delivery,
+                "brief": brief,
+            }
+        )
     elif args.output is not None:
         print(f"Created {args.output.resolve()}")
     else:
@@ -2016,39 +2097,31 @@ def command_gate(args: argparse.Namespace) -> int:
             print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
-    validation_errors = validate_manifest(data, stage=args.stage)
-    _, blockers, warnings = _quality_gate_state(data)
-    stale, _ = stale_artifacts(data)
     scan_root = (args.scan_path if args.scan_path is not None else args.manifest.parent).resolve()
-    portability_findings = scan_path(scan_root)
-    passed = not validation_errors and not blockers and not stale and not portability_findings
-    if args.fail_on_warning and warnings:
-        passed = False
     payload = {
         "command": "gate",
-        "passed": passed,
-        "stage": args.stage,
-        "validation_errors": validation_errors,
-        "quality_blockers": blockers,
-        "quality_warnings": warnings,
-        "stale_dependencies": stale,
-        "portability_findings": portability_findings,
+        **_evaluate_gate(
+            data,
+            stage=args.stage,
+            scan_root=scan_root,
+            fail_on_warning=args.fail_on_warning,
+        ),
     }
     if _json_output(args):
         _emit_json(payload)
     else:
-        for error in validation_errors:
+        for error in payload["validation_errors"]:
             print(f"ERROR: {error}", file=sys.stderr)
-        for item in blockers:
+        for item in payload["quality_blockers"]:
             print(f"BLOCKER: {item}")
-        for item in warnings:
+        for item in payload["quality_warnings"]:
             print(f"WARNING: {item}")
-        for item in stale:
+        for item in payload["stale_dependencies"]:
             print(f"STALE: {item}")
-        for item in portability_findings:
+        for item in payload["portability_findings"]:
             print(f"ERROR: {item}", file=sys.stderr)
-        print("Analysis gate: PASS" if passed else "Analysis gate: FAIL")
-    return 0 if passed else 1
+        print("Analysis gate: PASS" if payload["passed"] else "Analysis gate: FAIL")
+    return 0 if payload["passed"] else 1
 
 
 def build_parser() -> argparse.ArgumentParser:

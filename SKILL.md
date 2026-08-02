@@ -1,6 +1,6 @@
 ---
 name: governed-analytics-workflow
-description: Run an adaptive, reasoning-first, governed analytics workflow for unclear, metric-led, multi-source, or consequential business, product, marketing, digital, revenue, and operations questions. Use when an AI agent must infer the real decision need rather than accept raw inputs as the analysis specification, build an operational question tree and analysis blueprint, design contextual and decision data, select methods by analytical problem type, validate grain, scope, semantics, quality, and statistics, govern claims, and produce natural stakeholder outputs such as PowerPoint briefs. Designed for Codex, Claude Code, Gemini, and other file- and tool-capable agents.
+description: Run an adaptive, reasoning-first, governed analytics workflow for unclear, metric-led, multi-source, or consequential business, product, marketing, digital, revenue, and operations questions. Use when an AI agent must infer the real decision need, build an operational question tree and analysis blueprint, design contextual and decision data, select methods by analytical problem type, validate grain, scope, semantics, quality, statistics, behavioural instrumentation, or experiments when triggered, govern claims, and deliver an honest decision-ready Analysis Brief. Designed for Codex, Claude Code, Gemini, and other file- and tool-capable agents.
 ---
 
 # Governed Analytics Workflow
@@ -31,6 +31,7 @@ The primary outcome is a valuable answer: what the data supports, what it means,
 - If evidence is insufficient, narrow the claim, improve measurement, or report readiness instead of fabricating an answer.
 - For behavioural telemetry, prove that event semantics, identifiers, duplicates, consent coverage, missing events, and release history do not manufacture the pattern.
 - Deliver an honest Analysis Brief even when the answer is incomplete; name the known evidence, unknowns, limitations, and smallest useful next action.
+- Put the executive answer, strongest supporting evidence, material limitations, and next action directly in the conversation; files supplement rather than replace the answer.
 
 ## Start Behaviour
 
@@ -167,6 +168,8 @@ Use the Data Visualisation Catalogue once per distinct communication function wh
 #### 10. Build The Stakeholder Narrative
 
 Use the Analysis Brief as the primary human output. Build it from the analysis blueprint and approved claims, not from the request's order. Separate verified facts, interpretation, recommendation, and limitations. Add a deck only when the audience or request needs one, and freeze the claim set and narrative before generating medium- or high-risk decks.
+
+Return the useful conclusion in the conversation even when a file is generated. Do not end with only a file path or validation log.
 
 Do not require a chart when concise prose or a small table communicates the answer more clearly.
 

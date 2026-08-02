@@ -795,6 +795,53 @@ class ManifestValidationTest(unittest.TestCase):
         )
         self.assertEqual([], analysis_guard.validate_manifest(data, stage="delivery"))
 
+    def test_delivery_requires_a_decision_ready_brief_or_passed_stakeholder_visual(self) -> None:
+        data = valid_manifest()
+        data.pop("analysis_brief")
+        data["visuals"] = []
+        data["artifacts"][0].update({"path": "output.bin", "depends_on": ["M1", "C1"]})
+        errors = analysis_guard.validate_manifest(data, stage="delivery")
+        self.assertTrue(any("decision-ready analysis brief or a stakeholder visual" in error for error in errors), errors)
+
+    def test_passed_stakeholder_visual_can_be_the_delivery_without_a_brief(self) -> None:
+        data = valid_manifest()
+        data.pop("analysis_brief")
+        self.assertEqual([], analysis_guard.validate_manifest(data, stage="delivery"))
+
+    def test_brief_json_separates_generation_from_delivery_readiness(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            manifest = Path(temp) / "analysis-manifest.json"
+            data = valid_manifest()
+            data["status"] = "draft"
+            data["visuals"][0]["qa_status"] = "pending"
+            data["artifacts"][0]["status"] = "draft"
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+            args = type("Args", (), {"manifest": manifest, "output": None, "format": "json"})
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(0, analysis_guard.command_brief(args))
+            payload = json.loads(output.getvalue())
+            self.assertTrue(payload["generated"])
+            self.assertEqual("complete", payload["answer_status"])
+            self.assertFalse(payload["analysis_ready"])
+            self.assertFalse(payload["delivery_ready"])
+            self.assertNotIn("passed", payload)
+            self.assertTrue(payload["delivery"]["validation_errors"])
+
+    def test_brief_json_reports_analysis_and_delivery_readiness(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            manifest = Path(temp) / "analysis-manifest.json"
+            manifest.write_text(json.dumps(valid_manifest()), encoding="utf-8")
+            args = type("Args", (), {"manifest": manifest, "output": None, "format": "json"})
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(0, analysis_guard.command_brief(args))
+            payload = json.loads(output.getvalue())
+            self.assertTrue(payload["generated"])
+            self.assertTrue(payload["analysis_ready"])
+            self.assertTrue(payload["delivery_ready"])
+            self.assertTrue(payload["delivery"]["passed"])
+
     def test_gate_and_json_output_pass_complete_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             manifest = Path(temp) / "analysis-manifest.json"
@@ -847,6 +894,12 @@ class RuntimeContractTest(unittest.TestCase):
             self.assertIn(f"`{route}`", skill)
         self.assertIn("Never use legacy `core` or `supporting` roles", skill)
         self.assertIn("Record triggered routes with these exact IDs", skill)
+
+    def test_skill_requires_the_useful_answer_in_conversation(self) -> None:
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("directly in the conversation", skill)
+        self.assertIn("files supplement rather than replace the answer", skill)
+        self.assertIn("Do not end with only a file path or validation log", skill)
 
     def test_runtime_portability_scan_passes(self) -> None:
         runtime_paths = [ROOT / "SKILL.md", ROOT / "agents", ROOT / "references", ROOT / "assets", ROOT / "scripts"]

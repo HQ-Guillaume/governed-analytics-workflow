@@ -1,10 +1,44 @@
 # Changelog
 
+## 2.1.1 - 2026-08-02
+
+### Why This Release Matters
+
+Version 2.1.1 closes the delivery and release-evidence gaps found in the v2.1 evolution review. It keeps the useful Analysis Brief, telemetry, and experiment capabilities while making final readiness explicit and regression-tested.
+
+### What Changed
+
+- Delivery validation now requires either a decision-ready Analysis Brief or a stakeholder visual with passed rendered QA; an arbitrary active artifact cannot substitute for the human answer.
+- The `brief --format json` contract now separates successful generation, answer status, analytical readiness, and delivery readiness instead of using one ambiguous `passed` flag.
+- The skill now explicitly returns the executive answer, strongest evidence, material limitations, and next action in the conversation even when it also generates files.
+- Corrected the schema-2.0 compatibility documentation: older manifests remain readable but may require fingerprint normalization and review before passing the stricter v2.1 validator.
+- Added targeted regressions for text-only, visual-only, missing-deliverable, and brief-readiness behaviour.
+
+### What Users Should Do
+
+- Continue using `brief` for the human answer and `gate` as the final approval check.
+- Treat `generated: true` as command success, not delivery approval; inspect `analysis_ready` and `delivery_ready` in machine workflows.
+- Run `fingerprint --write` and revalidate older schema-2.0 manifests when required fields introduced by the v2.1 validator are absent.
+- Fresh installations should use the `v2.1.1` release archive or tag.
+
+### Validation
+
+- Full dependency-free unit, malformed-input, route, brief, gate, migration, benchmark, worked-example, portability, and deterministic-package suite.
+- Blind current-version forward evaluation covers all fourteen benchmark cases, including behavioural telemetry and experiments; all passed at 20/20 with no critical failure, and raw responses are retained for review.
+- Release check verifies project, runtime, changelog, package identity, and forward-evaluation version.
+- CI covers Python 3.10 and 3.13 on Ubuntu and Windows.
+
+### Known Limits
+
+- The guard validates declared structure and selected invariants; it cannot prove that an external query, experiment implementation, or business interpretation is correct.
+- Schema 2.0 identifies the manifest structure, while validator requirements can become stricter in patch releases; older manifests may need explicit normalization and review.
+- Blind forward scoring remains a reviewed release evaluation, not a guarantee for every future dataset or business context.
+
 ## 2.1.0 - 2026-08-01
 
 ### Why This Release Matters
 
-Version 2.1 makes the useful analytical answer the primary human outcome. It adds concrete validity checks for behavioural telemetry and experiments, produces an honest decision-ready brief even when evidence is incomplete, and removes user-selectable analysis modes without breaking schema 2.0 manifests.
+Version 2.1 makes the useful analytical answer the primary human outcome. It adds concrete validity checks for behavioural telemetry and experiments, produces an honest decision-ready brief even when evidence is incomplete, and removes user-selectable analysis modes while continuing to read schema 2.0 manifests.
 
 ### What Changed
 
@@ -24,7 +58,7 @@ Version 2.1 makes the useful analytical answer the primary human outcome. It add
 - Use `analysis_guard.py brief` as the default human output and add a deck only when the audience needs one.
 - Apply instrumentation and experiment routes only when their triggers are present.
 - Run `analysis_guard.py gate <manifest> --format json` for the final repeatable check.
-- Existing schema 2.0 manifests remain valid; remove the deprecated `needs_discovery.mode` field when next editing them.
+- Existing schema 2.0 manifests remain readable, but stricter v2.1 validation may require fingerprint normalization and review; remove the deprecated `needs_discovery.mode` field when next editing them.
 - Fresh installations should use the `v2.1.0` release archive or tag.
 
 ### Validation

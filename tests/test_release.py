@@ -61,7 +61,7 @@ class ReleaseTest(unittest.TestCase):
                     "-B",
                     str(ROOT / "tools" / "check_release.py"),
                     "--tag",
-                    "v2.1.0",
+                    "v2.1.1",
                     "--release-notes",
                     str(ROOT / "CHANGELOG.md"),
                     "--release-body-output",
@@ -74,7 +74,8 @@ class ReleaseTest(unittest.TestCase):
             )
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
             body = output.read_text(encoding="utf-8")
-            self.assertIn("## 2.1.0", body)
+            self.assertIn("## 2.1.1", body)
+            self.assertNotIn("## 2.1.0", body)
             self.assertNotIn("## 2.0.2", body)
 
     def test_runtime_package_is_deterministic_and_scoped(self) -> None:
@@ -182,7 +183,7 @@ class ReleaseTest(unittest.TestCase):
             with ZipFile(archive_path) as archive:
                 metadata = archive.read("governed-analytics-workflow/assets/release.json")
             release = json.loads(metadata)
-            self.assertEqual("2.1.0", release["version"])
+            self.assertEqual("2.1.1", release["version"])
             self.assertEqual("2.0", release["schema_version"])
 
 

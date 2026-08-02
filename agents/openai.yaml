@@ -1,4 +1,4 @@
 interface:
   display_name: "Governed Analytics Workflow"
   short_description: "Decision-ready analysis with governed evidence"
-  default_prompt: "Use $governed-analytics-workflow to infer the real decision need, build and execute a bounded analysis plan, validate the evidence and any relevant instrumentation or experiment risks, and deliver a decision-ready Analysis Brief that clearly separates the answer, evidence, interpretation, unknowns, and next action."
+  default_prompt: "Use $governed-analytics-workflow to infer the real decision need, build and execute a bounded analysis plan, validate the evidence and any relevant instrumentation or experiment risks, and give me the answer, evidence, limitations, and next action directly while preserving a governed Analysis Brief."

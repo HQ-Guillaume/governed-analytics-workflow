@@ -149,7 +149,9 @@ business question -> executive answer -> supporting evidence
 -> recommended next action -> methods and traceability
 ```
 
-The answer status is `complete`, `incomplete`, or `blocked`. An incomplete brief still states what is known, what cannot be established, why the gap exists, and the smallest useful next action. A deck is optional and derives from the approved brief and claims.
+The answer status is `complete`, `incomplete`, or `blocked`. An incomplete brief still states what is known, what cannot be established, why the gap exists, and the smallest useful next action. A deck is optional and derives from the approved brief and claims. The agent also puts the executive answer, strongest evidence, material limitations, and next action directly in the conversation; a generated file never replaces the explanation.
+
+In JSON output, `brief` reports `generated`, `answer_status`, `analysis_ready`, and `delivery_ready` separately. Successful generation does not imply that the claims or final delivery gate passed.
 
 See the [worked web/product example](references/worked-web-product-example.md) for a full raw-event reproduction of apparent form sends without a preceding form open.
 
@@ -207,6 +209,8 @@ python scripts/analysis_guard.py migrate path/to/analysis-manifest.json --output
 
 Migration preserves legacy content, marks new v2 requirements unresolved, and demotes approved contracts, validated metrics, approved claims, stakeholder visuals, and active artifacts until review. It never invents definitions or silently overwrites the source. Use `--write` only when explicit in-place replacement is intended.
 
+Schema `2.0` identifies the manifest's structural family, not a promise that every older manifest passes every newer validator unchanged. Validation became stricter in v2.1. Older schema-2.0 manifests may need `fingerprint --write` and explicit review before they pass evidence, claims, or delivery validation.
+
 ## Forward Benchmark
 
 The repository contains a blind benchmark of raw, confusing requests across all six problem types, including telemetry-reliability and experiment cases. Executing agents receive only the raw request. The hidden rubric scores:
@@ -218,7 +222,7 @@ The repository contains a blind benchmark of raw, confusing requests across all 
 - evidence limitations and claim discipline;
 - presentation clarity.
 
-Release acceptance requires no critical failure and a score of at least 16 out of 20. Static tests also enforce schema migration, conditional routes, quality gates, claim ceilings, measurement cards, chart rules, wording review, staleness, portability, and deterministic packaging.
+Release acceptance requires no critical failure and a score of at least 16 out of 20. The v2.1.1 release stores the raw blind responses and reviewed scores for all fourteen cases; all passed, including the telemetry-reliability and experiment cases. The historical six-case v2.0.0 baseline remains separately labelled, and score changes are not treated as a controlled model-quality uplift because different executing agents were used. Static tests also enforce schema migration, conditional routes, quality gates, claim ceilings, measurement cards, chart rules, wording review, staleness, portability, and deterministic packaging.
 
 ## Installation
 
@@ -239,9 +243,9 @@ The reusable package contains no client data, credentials, source integrations, 
 ## Release Checks
 
 ```powershell
-python tools/check_release.py --tag v2.1.0 --release-notes CHANGELOG.md
+python tools/check_release.py --tag v2.1.1 --release-notes CHANGELOG.md
 python -m unittest discover -s tests -v
-python tools/build_skill_package.py --output dist/governed-analytics-workflow-v2.1.0.zip
+python tools/build_skill_package.py --output dist/governed-analytics-workflow-v2.1.1.zip
 ```
 
 Tagged releases build the same deterministic runtime package tested locally.
